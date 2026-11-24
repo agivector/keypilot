@@ -56,7 +56,7 @@ func run(logger *slog.Logger) error {
 	service := keyregistry.NewService(store, nil)
 	server := &http.Server{
 		Addr:              configuration.Address,
-		Handler:           httpapi.New(service, configuration.AdminToken, configuration.JWKSMaxAge),
+		Handler:           httpapi.New(service, configuration.AdminID, configuration.AdminToken, configuration.JWKSMaxAge),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

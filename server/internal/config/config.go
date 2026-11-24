@@ -8,10 +8,13 @@ package config
 import (
 	"errors"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+var adminIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 // Config describes the runtime configuration required by the KeyPilot server.
 //
@@ -22,6 +25,7 @@ import (
 type Config struct {
 	Address         string
 	DataFile        string
+	AdminID         string
 	AdminToken      string
 	JWKSMaxAge      int
 	ShutdownTimeout time.Duration
@@ -39,12 +43,16 @@ func Load() (Config, error) {
 	configuration := Config{
 		Address:         envOrDefault("KEYPILOT_ADDR", ":8080"),
 		DataFile:        envOrDefault("KEYPILOT_DATA_FILE", "data/keypilot.json"),
+		AdminID:         envOrDefault("KEYPILOT_ADMIN_ID", "default-admin"),
 		AdminToken:      strings.TrimSpace(os.Getenv("KEYPILOT_ADMIN_TOKEN")),
 		JWKSMaxAge:      300,
 		ShutdownTimeout: 10 * time.Second,
 	}
 	if len(configuration.AdminToken) < 16 {
 		return Config{}, errors.New("KEYPILOT_ADMIN_TOKEN must contain at least 16 characters")
+	}
+	if !adminIDPattern.MatchString(configuration.AdminID) {
+		return Config{}, errors.New("KEYPILOT_ADMIN_ID must contain 1 to 64 letters, numbers, dots, underscores, or hyphens")
 	}
 
 	if rawMaxAge := strings.TrimSpace(os.Getenv("KEYPILOT_JWKS_MAX_AGE")); rawMaxAge != "" {

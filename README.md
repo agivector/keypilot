@@ -3,6 +3,7 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/codepunk-gm/keypilot/actions/workflows/ci.yml/badge.svg)](https://github.com/codepunk-gm/keypilot/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/badge/Go-1.24+-00ADD8.svg)](server/go.mod)
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB.svg)](sdk/python/pyproject.toml)
 [![Java](https://img.shields.io/badge/Java-17+-ED8B00.svg)](sdk/java/pom.xml)
@@ -54,7 +55,8 @@ Signer/Admin ─────► KeyPilot Server ─────► JSON file sto
 - Numeric key lifecycle and stable numeric error codes.
 - Standard JWKS publication with `ETag` and `Cache-Control`.
 - Bearer-token protected administration API.
-- Atomic JSON file persistence and administration audit records.
+- Atomic JSON file persistence and queryable administration audit records.
+- Named administrator identity, rejected-operation audits, and before/after key status history.
 - Non-root Docker image, health check, and graceful shutdown.
 
 ### SDKs
@@ -101,6 +103,7 @@ Use an administration token with at least 16 characters:
 docker run --rm \
   --name keypilot \
   -p 8080:8080 \
+  -e KEYPILOT_ADMIN_ID='security-operator' \
   -e KEYPILOT_ADMIN_TOKEN='replace-with-a-strong-token' \
   -v keypilot-data:/data \
   keypilot:dev
@@ -116,6 +119,18 @@ Expected response:
 
 ```json
 {"status":"ok"}
+```
+
+Check readiness, including persistence access:
+
+```bash
+curl http://127.0.0.1:8080/readyz
+```
+
+Expected response:
+
+```json
+{"status":"ready"}
 ```
 
 ### 3. Create an issuer
@@ -266,6 +281,17 @@ Both modes reject stale data after `max_stale` unless a refresh succeeds.
 
 KeyPilot can publish multiple active or retired keys during a safe rotation window.
 
+## Audit Query
+
+Administration mutations and authentication failures are persisted as audit records. Query the newest records with the administration token:
+
+```bash
+curl 'http://127.0.0.1:8080/admin/v1/audits?issuer=payment-service&limit=100' \
+  -H 'Authorization: Bearer replace-with-a-strong-token'
+```
+
+Each record includes the request ID, configured administrator identity, client IP, action and result enums, affected `issuer` and `kid`, status changes, error code, reason, and `create_time`.
+
 ## Configuration
 
 ### Server Environment Variables
@@ -273,6 +299,7 @@ KeyPilot can publish multiple active or retired keys during a safe rotation wind
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `KEYPILOT_ADMIN_TOKEN` | Yes | None | Administration Bearer token; minimum 16 characters |
+| `KEYPILOT_ADMIN_ID` | No | `default-admin` | Stable administrator identity written to audit records |
 | `KEYPILOT_ADDR` | No | `:8080` | HTTP listen address |
 | `KEYPILOT_DATA_FILE` | No | `data/keypilot.json` | Atomic JSON storage file; the Docker image sets `/data/keypilot.json` |
 | `KEYPILOT_JWKS_MAX_AGE` | No | `300` | Public JWKS cache duration in seconds |

@@ -122,6 +122,7 @@ const (
 	AuditActionCreateIssuer   AuditAction = 1
 	AuditActionImportKey      AuditAction = 2
 	AuditActionUpdateKeyState AuditAction = 3
+	AuditActionAuthentication AuditAction = 4
 )
 
 // AuditResult describes the outcome of an administration action.

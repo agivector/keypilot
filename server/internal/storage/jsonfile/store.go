@@ -246,6 +246,46 @@ func (store *Store) UpdateKey(ctx context.Context, key keyregistry.VerificationK
 	return store.commit(next)
 }
 
+// AppendAudit atomically appends a standalone administration audit record.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - ctx: request context.
+//   - audit: audit record to persist.
+//
+// Returns:
+//   - error: cancellation or persistence error.
+func (store *Store) AppendAudit(ctx context.Context, audit keyregistry.AuditRecord) error {
+	store.mutex.Lock()
+	defer store.mutex.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	next := cloneSnapshot(store.data)
+	next.Audits = append(next.Audits, audit)
+	return store.commit(next)
+}
+
+// ListAudits returns a copy of all persisted administration audit records.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - ctx: request context.
+//
+// Returns:
+//   - []keyregistry.AuditRecord: audit records in persistence order.
+//   - error: cancellation error.
+func (store *Store) ListAudits(ctx context.Context) ([]keyregistry.AuditRecord, error) {
+	store.mutex.RLock()
+	defer store.mutex.RUnlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return append([]keyregistry.AuditRecord(nil), store.data.Audits...), nil
+}
+
 // load reads an existing snapshot from disk when the file exists.
 //
 // Author: vectorshi

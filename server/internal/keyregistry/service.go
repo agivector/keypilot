@@ -53,7 +53,7 @@ func NewService(store Store, now func() time.Time) *Service {
 // Created: 2026-11-25
 // Parameters:
 //   - ctx: request context.
-//   - requestID: request correlation identifier.
+//   - auditContext: authenticated administration request metadata.
 //   - issuer: stable issuer identifier.
 //   - displayName: human-readable issuer name.
 //   - description: optional issuer description.
@@ -61,7 +61,7 @@ func NewService(store Store, now func() time.Time) *Service {
 // Returns:
 //   - Issuer: persisted issuer.
 //   - error: validation, conflict, or storage error.
-func (service *Service) CreateIssuer(ctx context.Context, requestID string, issuer string, displayName string, description string) (Issuer, error) {
+func (service *Service) CreateIssuer(ctx context.Context, auditContext AuditContext, issuer string, displayName string, description string) (Issuer, error) {
 	issuer = strings.TrimSpace(issuer)
 	displayName = strings.TrimSpace(displayName)
 	description = strings.TrimSpace(description)
@@ -71,7 +71,7 @@ func (service *Service) CreateIssuer(ctx context.Context, requestID string, issu
 
 	now := service.now().UTC()
 	record := Issuer{Issuer: issuer, DisplayName: displayName, Description: description, CreateTime: now, UpdateTime: now}
-	audit := AuditRecord{RequestID: requestID, Action: AuditActionCreateIssuer, Issuer: issuer, Result: AuditResultSuccess, CreateTime: now}
+	audit := service.newAuditRecord(auditContext, AuditActionCreateIssuer, AuditResultSuccess, issuer, "")
 	if err := service.store.CreateIssuer(ctx, record, audit); err != nil {
 		if errors.Is(err, ErrStorageConflict) {
 			return Issuer{}, NewDomainError(APIErrorIssuerAlreadyExists, "issuer already exists", err)
@@ -128,7 +128,7 @@ func (service *Service) GetIssuer(ctx context.Context, issuer string) (Issuer, e
 // Created: 2026-11-25
 // Parameters:
 //   - ctx: request context.
-//   - requestID: request correlation identifier.
+//   - auditContext: authenticated administration request metadata.
 //   - issuer: owner issuer identifier.
 //   - jwk: RSA public JWK.
 //   - description: optional key description.
@@ -136,7 +136,7 @@ func (service *Service) GetIssuer(ctx context.Context, issuer string) (Issuer, e
 // Returns:
 //   - VerificationKey: persisted verification key.
 //   - error: validation, conflict, not-found, or storage error.
-func (service *Service) ImportKey(ctx context.Context, requestID string, issuer string, jwk RSAPublicJWK, description string) (VerificationKey, error) {
+func (service *Service) ImportKey(ctx context.Context, auditContext AuditContext, issuer string, jwk RSAPublicJWK, description string) (VerificationKey, error) {
 	if _, err := service.GetIssuer(ctx, issuer); err != nil {
 		return VerificationKey{}, err
 	}
@@ -154,7 +154,8 @@ func (service *Service) ImportKey(ctx context.Context, requestID string, issuer 
 		Algorithm: algorithm, Status: KeyStatusPreActive,
 		JWK: jwk, Description: strings.TrimSpace(description), CreateTime: now, UpdateTime: now,
 	}
-	audit := AuditRecord{RequestID: requestID, Action: AuditActionImportKey, Issuer: issuer, KeyID: jwk.KeyID, Result: AuditResultSuccess, CreateTime: now}
+	audit := service.newAuditRecord(auditContext, AuditActionImportKey, AuditResultSuccess, issuer, jwk.KeyID)
+	audit.AfterStatus = KeyStatusPreActive
 	if err := service.store.CreateKey(ctx, key, audit); err != nil {
 		if errors.Is(err, ErrStorageConflict) {
 			return VerificationKey{}, NewDomainError(APIErrorKeyAlreadyExists, "verification key already exists", err)
@@ -216,7 +217,7 @@ func (service *Service) GetKey(ctx context.Context, issuer string, keyID string)
 // Created: 2026-11-25
 // Parameters:
 //   - ctx: request context.
-//   - requestID: request correlation identifier.
+//   - auditContext: authenticated administration request metadata.
 //   - issuer: owner issuer identifier.
 //   - keyID: key identifier within the issuer.
 //   - targetStatus: requested numeric key status.
@@ -225,7 +226,7 @@ func (service *Service) GetKey(ctx context.Context, issuer string, keyID string)
 // Returns:
 //   - VerificationKey: updated key.
 //   - error: validation, transition, not-found, or storage error.
-func (service *Service) UpdateKeyStatus(ctx context.Context, requestID string, issuer string, keyID string, targetStatus KeyStatus, reason string) (VerificationKey, error) {
+func (service *Service) UpdateKeyStatus(ctx context.Context, auditContext AuditContext, issuer string, keyID string, targetStatus KeyStatus, reason string) (VerificationKey, error) {
 	if !targetStatus.IsValid() || targetStatus == KeyStatusPreActive {
 		return VerificationKey{}, NewDomainError(APIErrorValidation, "target key status is invalid", nil)
 	}
@@ -244,6 +245,7 @@ func (service *Service) UpdateKeyStatus(ctx context.Context, requestID string, i
 		return VerificationKey{}, NewDomainError(APIErrorInvalidKeyTransition, "key status transition is not allowed", nil)
 	}
 
+	previousStatus := key.Status
 	now := service.now().UTC()
 	key.Status = targetStatus
 	key.UpdateTime = now
@@ -261,7 +263,10 @@ func (service *Service) UpdateKeyStatus(ctx context.Context, requestID string, i
 		key.RevokeReason = reason
 	}
 
-	audit := AuditRecord{RequestID: requestID, Action: AuditActionUpdateKeyState, Issuer: issuer, KeyID: keyID, Result: AuditResultSuccess, Reason: reason, CreateTime: now}
+	audit := service.newAuditRecord(auditContext, AuditActionUpdateKeyState, AuditResultSuccess, issuer, keyID)
+	audit.BeforeStatus = previousStatus
+	audit.AfterStatus = targetStatus
+	audit.Reason = reason
 	if err := service.store.UpdateKey(ctx, key, audit); err != nil {
 		return VerificationKey{}, NewDomainError(APIErrorStorageUnavailable, "verification key could not be updated", err)
 	}
@@ -291,6 +296,119 @@ func (service *Service) GetJWKSet(ctx context.Context, issuer string) (JWKSet, e
 		}
 	}
 	return result, nil
+}
+
+// CheckReady verifies that the configured persistence store can be read.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - ctx: request context.
+//
+// Returns:
+//   - error: storage error when the service is not ready.
+func (service *Service) CheckReady(ctx context.Context) error {
+	if _, err := service.store.ListIssuers(ctx); err != nil {
+		return NewDomainError(APIErrorStorageUnavailable, "storage is not ready", err)
+	}
+	return nil
+}
+
+// RecordFailure persists a failed administration or authentication audit event.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - ctx: request context.
+//   - auditContext: administration request metadata.
+//   - action: attempted administration action.
+//   - issuer: optional issuer identifier.
+//   - keyID: optional key identifier.
+//   - errorCode: stable failure code.
+//   - reason: failure reason safe for audit storage.
+//
+// Returns:
+//   - error: storage error when the audit record cannot be persisted.
+func (service *Service) RecordFailure(ctx context.Context, auditContext AuditContext, action AuditAction, issuer string, keyID string, errorCode APIErrorCode, reason string) error {
+	audit := service.newAuditRecord(auditContext, action, AuditResultFailure, issuer, keyID)
+	audit.ErrorCode = errorCode
+	audit.Reason = strings.TrimSpace(reason)
+	if len(audit.Reason) > 500 {
+		audit.Reason = audit.Reason[:500]
+	}
+	if err := service.store.AppendAudit(ctx, audit); err != nil {
+		return NewDomainError(APIErrorStorageUnavailable, "audit record could not be stored", err)
+	}
+	return nil
+}
+
+// ListAudits returns recent audit records in reverse chronological order.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - ctx: request context.
+//   - issuer: optional issuer filter.
+//   - limit: maximum number of records from 1 through 200.
+//
+// Returns:
+//   - []AuditRecord: filtered audit records, newest first.
+//   - error: validation or storage error.
+func (service *Service) ListAudits(ctx context.Context, issuer string, limit int) ([]AuditRecord, error) {
+	issuer = strings.TrimSpace(issuer)
+	if limit < 1 || limit > 200 || (issuer != "" && !issuerPattern.MatchString(issuer)) {
+		return nil, NewDomainError(APIErrorValidation, "audit query is invalid", nil)
+	}
+	audits, err := service.store.ListAudits(ctx)
+	if err != nil {
+		return nil, NewDomainError(APIErrorStorageUnavailable, "audit records could not be loaded", err)
+	}
+	sort.SliceStable(audits, func(left int, right int) bool {
+		return audits[left].CreateTime.After(audits[right].CreateTime)
+	})
+	result := make([]AuditRecord, 0, min(limit, len(audits)))
+	for _, audit := range audits {
+		if issuer != "" && audit.Issuer != issuer {
+			continue
+		}
+		result = append(result, audit)
+		if len(result) == limit {
+			break
+		}
+	}
+	return result, nil
+}
+
+// newAuditRecord creates a normalized audit record with the service clock.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - auditContext: administration request metadata.
+//   - action: administration action enum.
+//   - result: audit result enum.
+//   - issuer: optional issuer identifier.
+//   - keyID: optional key identifier.
+//
+// Returns:
+//   - AuditRecord: normalized audit record.
+func (service *Service) newAuditRecord(auditContext AuditContext, action AuditAction, result AuditResult, issuer string, keyID string) AuditRecord {
+	actor := strings.TrimSpace(auditContext.Actor)
+	if actor == "" {
+		actor = "unknown"
+	}
+	clientIP := strings.TrimSpace(auditContext.ClientIP)
+	userAgent := strings.TrimSpace(auditContext.UserAgent)
+	if len(clientIP) > 128 {
+		clientIP = clientIP[:128]
+	}
+	if len(userAgent) > 256 {
+		userAgent = userAgent[:256]
+	}
+	return AuditRecord{
+		RequestID: strings.TrimSpace(auditContext.RequestID), Actor: actor, ClientIP: clientIP, UserAgent: userAgent,
+		Action: action, Issuer: strings.TrimSpace(issuer), KeyID: strings.TrimSpace(keyID), Result: result, CreateTime: service.now().UTC(),
+	}
 }
 
 // canTransition reports whether a key lifecycle transition is allowed.

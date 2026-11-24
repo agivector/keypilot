@@ -42,6 +42,9 @@ func TestStorePersistsAndReloads(testingContext *testing.T) {
 	if err := store.CreateKey(context.Background(), key, keyregistry.AuditRecord{RequestID: "2", Action: keyregistry.AuditActionImportKey, CreateTime: now}); err != nil {
 		testingContext.Fatalf("create key: %v", err)
 	}
+	if err := store.AppendAudit(context.Background(), keyregistry.AuditRecord{RequestID: "3", Actor: "anonymous", Action: keyregistry.AuditActionAuthentication, Result: keyregistry.AuditResultFailure, ErrorCode: keyregistry.APIErrorUnauthorized, CreateTime: now}); err != nil {
+		testingContext.Fatalf("append audit: %v", err)
+	}
 
 	reloaded, err := New(path)
 	if err != nil {
@@ -54,5 +57,9 @@ func TestStorePersistsAndReloads(testingContext *testing.T) {
 	loadedKey, err := reloaded.GetKey(context.Background(), "payment-service", "key-1")
 	if err != nil || loadedKey.Status != keyregistry.KeyStatusPreActive {
 		testingContext.Fatalf("unexpected key after reload: key=%+v err=%v", loadedKey, err)
+	}
+	audits, err := reloaded.ListAudits(context.Background())
+	if err != nil || len(audits) != 3 || audits[2].ErrorCode != keyregistry.APIErrorUnauthorized {
+		testingContext.Fatalf("unexpected audits after reload: audits=%+v err=%v", audits, err)
 	}
 }

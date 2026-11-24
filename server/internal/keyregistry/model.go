@@ -60,6 +60,19 @@ type VerificationKey struct {
 	RevokeReason string          `json:"revokedReason,omitempty"`
 }
 
+// AuditContext describes the authenticated administration request metadata copied into audit records.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters: None.
+// Returns: None.
+type AuditContext struct {
+	RequestID string
+	Actor     string
+	ClientIP  string
+	UserAgent string
+}
+
 // AuditRecord describes a persisted administration audit event.
 //
 // Author: vectorshi
@@ -67,13 +80,19 @@ type VerificationKey struct {
 // Parameters: None.
 // Returns: None.
 type AuditRecord struct {
-	RequestID  string      `json:"requestId"`
-	Action     AuditAction `json:"action"`
-	Issuer     string      `json:"issuer"`
-	KeyID      string      `json:"kid,omitempty"`
-	Result     AuditResult `json:"result"`
-	Reason     string      `json:"reason,omitempty"`
-	CreateTime time.Time   `json:"create_time"`
+	RequestID    string       `json:"requestId"`
+	Actor        string       `json:"actor"`
+	ClientIP     string       `json:"clientIp,omitempty"`
+	UserAgent    string       `json:"userAgent,omitempty"`
+	Action       AuditAction  `json:"action"`
+	Issuer       string       `json:"issuer,omitempty"`
+	KeyID        string       `json:"kid,omitempty"`
+	Result       AuditResult  `json:"result"`
+	BeforeStatus KeyStatus    `json:"beforeStatus,omitempty"`
+	AfterStatus  KeyStatus    `json:"afterStatus,omitempty"`
+	ErrorCode    APIErrorCode `json:"errorCode,omitempty"`
+	Reason       string       `json:"reason,omitempty"`
+	CreateTime   time.Time    `json:"create_time"`
 }
 
 // JWKSet describes a standard JSON Web Key Set response.

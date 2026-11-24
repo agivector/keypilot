@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,6 +35,7 @@ type requestIDContextKey struct{}
 // Returns: None.
 type Handler struct {
 	service        *keyregistry.Service
+	adminID        string
 	adminTokenHash [32]byte
 	jwksMaxAge     int
 }
@@ -110,16 +112,19 @@ type errorBody struct {
 // Created: 2026-11-25
 // Parameters:
 //   - service: key registry service.
+//   - adminID: stable administration identity written to audit records.
 //   - adminToken: administration bearer token.
 //   - jwksMaxAge: public JWKS cache duration in seconds.
 //
 // Returns:
 //   - http.Handler: configured request handler.
-func New(service *keyregistry.Service, adminToken string, jwksMaxAge int) http.Handler {
-	handler := &Handler{service: service, adminTokenHash: sha256.Sum256([]byte(adminToken)), jwksMaxAge: jwksMaxAge}
+func New(service *keyregistry.Service, adminID string, adminToken string, jwksMaxAge int) http.Handler {
+	handler := &Handler{service: service, adminID: adminID, adminTokenHash: sha256.Sum256([]byte(adminToken)), jwksMaxAge: jwksMaxAge}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handler.getHealth)
+	mux.HandleFunc("GET /readyz", handler.getReady)
 	mux.HandleFunc("GET /v1/issuers/{issuer}/.well-known/jwks.json", handler.getIssuerJWKS)
+	mux.Handle("GET /admin/v1/audits", handler.requireAdmin(http.HandlerFunc(handler.listAudits)))
 	mux.Handle("POST /admin/v1/issuers", handler.requireAdmin(http.HandlerFunc(handler.createIssuer)))
 	mux.Handle("GET /admin/v1/issuers", handler.requireAdmin(http.HandlerFunc(handler.listIssuers)))
 	mux.Handle("GET /admin/v1/issuers/{issuer}", handler.requireAdmin(http.HandlerFunc(handler.getIssuer)))
@@ -143,6 +148,23 @@ func (handler *Handler) getHealth(response http.ResponseWriter, request *http.Re
 	writeJSON(response, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// getReady returns readiness only when the configured persistence store is readable.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - response: HTTP response writer.
+//   - request: HTTP request.
+//
+// Returns: None.
+func (handler *Handler) getReady(response http.ResponseWriter, request *http.Request) {
+	if err := handler.service.CheckReady(request.Context()); err != nil {
+		handler.writeError(response, request, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]string{"status": "ready"})
+}
+
 // createIssuer validates and creates an issuer.
 //
 // Author: vectorshi
@@ -155,15 +177,42 @@ func (handler *Handler) getHealth(response http.ResponseWriter, request *http.Re
 func (handler *Handler) createIssuer(response http.ResponseWriter, request *http.Request) {
 	var body createIssuerRequest
 	if err := decodeJSON(response, request, &body); err != nil {
-		handler.writeError(response, request, keyregistry.NewDomainError(keyregistry.APIErrorValidation, err.Error(), err))
+		handler.writeAuditedError(response, request, keyregistry.AuditActionCreateIssuer, body.Issuer, "", keyregistry.NewDomainError(keyregistry.APIErrorValidation, err.Error(), err))
 		return
 	}
-	issuer, err := handler.service.CreateIssuer(request.Context(), requestID(request.Context()), body.Issuer, body.DisplayName, body.Description)
+	issuer, err := handler.service.CreateIssuer(request.Context(), handler.auditContext(request, handler.adminID), body.Issuer, body.DisplayName, body.Description)
+	if err != nil {
+		handler.writeAuditedError(response, request, keyregistry.AuditActionCreateIssuer, body.Issuer, "", err)
+		return
+	}
+	writeJSON(response, http.StatusCreated, issuer)
+}
+
+// listAudits returns recent administration audit records.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - response: HTTP response writer.
+//   - request: HTTP request.
+//
+// Returns: None.
+func (handler *Handler) listAudits(response http.ResponseWriter, request *http.Request) {
+	limit := 100
+	if rawLimit := strings.TrimSpace(request.URL.Query().Get("limit")); rawLimit != "" {
+		parsedLimit, err := strconv.Atoi(rawLimit)
+		if err != nil {
+			handler.writeError(response, request, keyregistry.NewDomainError(keyregistry.APIErrorValidation, "audit limit must be an integer", err))
+			return
+		}
+		limit = parsedLimit
+	}
+	audits, err := handler.service.ListAudits(request.Context(), request.URL.Query().Get("issuer"), limit)
 	if err != nil {
 		handler.writeError(response, request, err)
 		return
 	}
-	writeJSON(response, http.StatusCreated, issuer)
+	writeJSON(response, http.StatusOK, itemList[keyregistry.AuditRecord]{Items: audits})
 }
 
 // listIssuers returns all issuers.
@@ -214,17 +263,17 @@ func (handler *Handler) getIssuer(response http.ResponseWriter, request *http.Re
 func (handler *Handler) importKey(response http.ResponseWriter, request *http.Request) {
 	var body importKeyRequest
 	if err := decodeJSON(response, request, &body); err != nil {
-		handler.writeError(response, request, keyregistry.NewDomainError(keyregistry.APIErrorValidation, err.Error(), err))
+		handler.writeAuditedError(response, request, keyregistry.AuditActionImportKey, request.PathValue("issuer"), "", keyregistry.NewDomainError(keyregistry.APIErrorValidation, err.Error(), err))
 		return
 	}
 	jwk, err := decodePublicJWK(body.JWK)
 	if err != nil {
-		handler.writeError(response, request, err)
+		handler.writeAuditedError(response, request, keyregistry.AuditActionImportKey, request.PathValue("issuer"), "", err)
 		return
 	}
-	key, err := handler.service.ImportKey(request.Context(), requestID(request.Context()), request.PathValue("issuer"), jwk, body.Description)
+	key, err := handler.service.ImportKey(request.Context(), handler.auditContext(request, handler.adminID), request.PathValue("issuer"), jwk, body.Description)
 	if err != nil {
-		handler.writeError(response, request, err)
+		handler.writeAuditedError(response, request, keyregistry.AuditActionImportKey, request.PathValue("issuer"), jwk.KeyID, err)
 		return
 	}
 	writeJSON(response, http.StatusCreated, key)
@@ -278,14 +327,14 @@ func (handler *Handler) getKey(response http.ResponseWriter, request *http.Reque
 func (handler *Handler) updateKeyStatus(response http.ResponseWriter, request *http.Request) {
 	var body updateKeyStatusRequest
 	if err := decodeJSON(response, request, &body); err != nil {
-		handler.writeError(response, request, keyregistry.NewDomainError(keyregistry.APIErrorValidation, err.Error(), err))
+		handler.writeAuditedError(response, request, keyregistry.AuditActionUpdateKeyState, request.PathValue("issuer"), request.PathValue("kid"), keyregistry.NewDomainError(keyregistry.APIErrorValidation, err.Error(), err))
 		return
 	}
 	key, err := handler.service.UpdateKeyStatus(
-		request.Context(), requestID(request.Context()), request.PathValue("issuer"), request.PathValue("kid"), body.Status, body.Reason,
+		request.Context(), handler.auditContext(request, handler.adminID), request.PathValue("issuer"), request.PathValue("kid"), body.Status, body.Reason,
 	)
 	if err != nil {
-		handler.writeError(response, request, err)
+		handler.writeAuditedError(response, request, keyregistry.AuditActionUpdateKeyState, request.PathValue("issuer"), request.PathValue("kid"), err)
 		return
 	}
 	writeJSON(response, http.StatusOK, key)
@@ -338,12 +387,12 @@ func (handler *Handler) requireAdmin(next http.Handler) http.Handler {
 		authorization := request.Header.Get("Authorization")
 		const prefix = "Bearer "
 		if !strings.HasPrefix(authorization, prefix) {
-			handler.writeError(response, request, keyregistry.NewDomainError(keyregistry.APIErrorUnauthorized, "administration token is required", nil))
+			handler.writeAuditedError(response, request, keyregistry.AuditActionAuthentication, request.PathValue("issuer"), request.PathValue("kid"), keyregistry.NewDomainError(keyregistry.APIErrorUnauthorized, "administration token is required", nil))
 			return
 		}
 		providedHash := sha256.Sum256([]byte(strings.TrimSpace(strings.TrimPrefix(authorization, prefix))))
 		if subtle.ConstantTimeCompare(providedHash[:], handler.adminTokenHash[:]) != 1 {
-			handler.writeError(response, request, keyregistry.NewDomainError(keyregistry.APIErrorUnauthorized, "administration token is invalid", nil))
+			handler.writeAuditedError(response, request, keyregistry.AuditActionAuthentication, request.PathValue("issuer"), request.PathValue("kid"), keyregistry.NewDomainError(keyregistry.APIErrorUnauthorized, "administration token is invalid", nil))
 			return
 		}
 		next.ServeHTTP(response, request)
@@ -382,13 +431,70 @@ func (handler *Handler) withRequestID(next http.Handler) http.Handler {
 //
 // Returns: None.
 func (handler *Handler) writeError(response http.ResponseWriter, request *http.Request, err error) {
-	domainError := &keyregistry.DomainError{}
-	if !errors.As(err, &domainError) {
-		domainError = keyregistry.NewDomainError(keyregistry.APIErrorInternal, "internal server error", err)
-	}
+	domainError := domainErrorFrom(err)
 	writeJSON(response, statusForCode(domainError.Code), errorEnvelope{Error: errorBody{
 		Code: domainError.Code, Message: domainError.Message, RequestID: requestID(request.Context()),
 	}})
+}
+
+// writeAuditedError records an administration failure before writing the original error response.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - response: HTTP response writer.
+//   - request: HTTP request.
+//   - action: attempted administration action.
+//   - issuer: optional issuer identifier.
+//   - keyID: optional key identifier.
+//   - err: original domain error.
+//
+// Returns: None.
+func (handler *Handler) writeAuditedError(response http.ResponseWriter, request *http.Request, action keyregistry.AuditAction, issuer string, keyID string, err error) {
+	domainError := domainErrorFrom(err)
+	actor := handler.adminID
+	if action == keyregistry.AuditActionAuthentication {
+		actor = "anonymous"
+	}
+	_ = handler.service.RecordFailure(request.Context(), handler.auditContext(request, actor), action, issuer, keyID, domainError.Code, domainError.Message)
+	handler.writeError(response, request, domainError)
+}
+
+// auditContext extracts bounded request metadata for administration audit records.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - request: current HTTP request.
+//   - actor: authenticated or anonymous actor identifier.
+//
+// Returns:
+//   - keyregistry.AuditContext: request metadata safe for audit persistence.
+func (handler *Handler) auditContext(request *http.Request, actor string) keyregistry.AuditContext {
+	clientIP := request.RemoteAddr
+	if host, _, err := net.SplitHostPort(request.RemoteAddr); err == nil {
+		clientIP = host
+	}
+	return keyregistry.AuditContext{
+		RequestID: requestID(request.Context()), Actor: actor, ClientIP: clientIP, UserAgent: request.UserAgent(),
+	}
+}
+
+// domainErrorFrom normalizes arbitrary errors into the stable domain error contract.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - err: error to normalize.
+//
+// Returns:
+//   - *keyregistry.DomainError: existing or synthesized domain error.
+func domainErrorFrom(err error) *keyregistry.DomainError {
+	domainError := &keyregistry.DomainError{}
+	if !errors.As(err, &domainError) {
+		return keyregistry.NewDomainError(keyregistry.APIErrorInternal, "internal server error", err)
+	}
+	return domainError
 }
 
 // decodeJSON decodes one strict JSON object and rejects additional content.

@@ -23,6 +23,7 @@ import (
 )
 
 const testAdminToken = "0123456789abcdef-test-token"
+const testAdminID = "security-operator"
 
 // TestHandlerLifecycleAndJWKS verifies the complete administration and JWKS flow.
 //
@@ -35,6 +36,10 @@ const testAdminToken = "0123456789abcdef-test-token"
 func TestHandlerLifecycleAndJWKS(testingContext *testing.T) {
 	testingContext.Parallel()
 	handler := testHandler(testingContext)
+	readyResponse := performJSON(testingContext, handler, http.MethodGet, "/readyz", nil, false, nil)
+	if readyResponse.Code != http.StatusOK {
+		testingContext.Fatalf("ready status=%d body=%s", readyResponse.Code, readyResponse.Body.String())
+	}
 
 	issuerResponse := performJSON(testingContext, handler, http.MethodPost, "/admin/v1/issuers", map[string]any{
 		"issuer": "payment-service", "displayName": "Payment Service",
@@ -73,6 +78,27 @@ func TestHandlerLifecycleAndJWKS(testingContext *testing.T) {
 	if notModified.Code != http.StatusNotModified {
 		testingContext.Fatalf("expected 304, got %d", notModified.Code)
 	}
+
+	auditResponse := performJSON(testingContext, handler, http.MethodGet, "/admin/v1/audits?issuer=payment-service&limit=10", nil, true, nil)
+	if auditResponse.Code != http.StatusOK {
+		testingContext.Fatalf("audit list status=%d body=%s", auditResponse.Code, auditResponse.Body.String())
+	}
+	var auditList itemList[keyregistry.AuditRecord]
+	if err := json.Unmarshal(auditResponse.Body.Bytes(), &auditList); err != nil || len(auditList.Items) != 3 {
+		testingContext.Fatalf("unexpected audits: count=%d err=%v body=%s", len(auditList.Items), err, auditResponse.Body.String())
+	}
+	foundStatusChange := false
+	for _, audit := range auditList.Items {
+		if audit.Actor != testAdminID || audit.ClientIP == "" {
+			testingContext.Fatalf("audit metadata is incomplete: %+v", audit)
+		}
+		if audit.Action == keyregistry.AuditActionUpdateKeyState && audit.BeforeStatus == keyregistry.KeyStatusPreActive && audit.AfterStatus == keyregistry.KeyStatusActive {
+			foundStatusChange = true
+		}
+	}
+	if !foundStatusChange {
+		testingContext.Fatalf("status change audit was not found: %+v", auditList.Items)
+	}
 }
 
 // TestHandlerRejectsUnauthorizedAndPrivateJWK verifies management authentication and private key rejection.
@@ -103,6 +129,25 @@ func TestHandlerRejectsUnauthorizedAndPrivateJWK(testingContext *testing.T) {
 	if response.Code != http.StatusBadRequest || !bytes.Contains(response.Body.Bytes(), []byte(`"code":1003`)) {
 		testingContext.Fatalf("expected private key rejection, status=%d body=%s", response.Code, response.Body.String())
 	}
+
+	auditResponse := performJSON(testingContext, handler, http.MethodGet, "/admin/v1/audits?limit=10", nil, true, nil)
+	var auditList itemList[keyregistry.AuditRecord]
+	if auditResponse.Code != http.StatusOK || json.Unmarshal(auditResponse.Body.Bytes(), &auditList) != nil {
+		testingContext.Fatalf("list failure audits status=%d body=%s", auditResponse.Code, auditResponse.Body.String())
+	}
+	foundAuthenticationFailure := false
+	foundImportFailure := false
+	for _, audit := range auditList.Items {
+		if audit.Action == keyregistry.AuditActionAuthentication && audit.Result == keyregistry.AuditResultFailure && audit.ErrorCode == keyregistry.APIErrorUnauthorized {
+			foundAuthenticationFailure = true
+		}
+		if audit.Action == keyregistry.AuditActionImportKey && audit.Result == keyregistry.AuditResultFailure && audit.ErrorCode == keyregistry.APIErrorPrivateKeyNotAllowed {
+			foundImportFailure = true
+		}
+	}
+	if !foundAuthenticationFailure || !foundImportFailure {
+		testingContext.Fatalf("expected authentication and import failure audits: %+v", auditList.Items)
+	}
 }
 
 // testHandler creates a handler with isolated JSON persistence.
@@ -120,7 +165,7 @@ func testHandler(testingContext *testing.T) http.Handler {
 	if err != nil {
 		testingContext.Fatalf("create store: %v", err)
 	}
-	return New(keyregistry.NewService(store, nil), testAdminToken, 300)
+	return New(keyregistry.NewService(store, nil), testAdminID, testAdminToken, 300)
 }
 
 // performJSON executes one JSON HTTP request against a test handler.

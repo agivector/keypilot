@@ -21,4 +21,6 @@ type Store interface {
 	ListKeys(context.Context, string) ([]VerificationKey, error)
 	GetKey(context.Context, string, string) (VerificationKey, error)
 	UpdateKey(context.Context, VerificationKey, AuditRecord) error
+	AppendAudit(context.Context, AuditRecord) error
+	ListAudits(context.Context) ([]AuditRecord, error)
 }

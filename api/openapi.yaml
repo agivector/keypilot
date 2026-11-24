@@ -17,6 +17,7 @@ servers:
 tags:
   - name: Health
   - name: JWKS
+  - name: Audits
   - name: Issuers
   - name: Keys
 paths:
@@ -35,6 +36,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+  /readyz:
+    get:
+      tags: [Health]
+      operationId: getReadiness
+      summary: Check whether persistent storage is readable
+      responses:
+        "200":
+          description: Service is ready
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/issuers/{issuer}/.well-known/jwks.json:
     get:
       tags: [JWKS]
@@ -78,6 +96,54 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /admin/v1/audits:
+    get:
+      tags: [Audits]
+      operationId: listAudits
+      summary: List recent administration audit records
+      security:
+        - AdminBearer: []
+      parameters:
+        - name: issuer
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 100
+      responses:
+        "200":
+          description: Audit record list ordered from newest to oldest
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AuditRecord"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /admin/v1/issuers:
     post:
       tags: [Issuers]
@@ -325,6 +391,14 @@ components:
         status:
           type: string
           const: ok
+    ReadinessResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ready
     CreateIssuerRequest:
       type: object
       additionalProperties: false
@@ -429,6 +503,38 @@ components:
           format: date-time
         revokedReason:
           type: [string, "null"]
+    AuditRecord:
+      type: object
+      additionalProperties: false
+      required: [requestId, actor, action, result, create_time]
+      properties:
+        requestId:
+          type: string
+        actor:
+          type: string
+        clientIp:
+          type: string
+        userAgent:
+          type: string
+        action:
+          $ref: "#/components/schemas/AuditAction"
+        issuer:
+          type: string
+        kid:
+          type: string
+        result:
+          $ref: "#/components/schemas/AuditResult"
+        beforeStatus:
+          $ref: "#/components/schemas/KeyStatus"
+        afterStatus:
+          $ref: "#/components/schemas/KeyStatus"
+        errorCode:
+          $ref: "#/components/schemas/ApiErrorCode"
+        reason:
+          type: string
+        create_time:
+          type: string
+          format: date-time
     RsaPublicJwk:
       type: object
       additionalProperties: false
@@ -491,6 +597,18 @@ components:
         4=ARCHIVED, 5=REVOKED.
       enum: [1, 2, 3, 4, 5]
       x-enum-varnames: [PRE_ACTIVE, ACTIVE, RETIRED, ARCHIVED, REVOKED]
+    AuditAction:
+      type: integer
+      format: int32
+      description: Numeric audit action enum. 1=CREATE_ISSUER, 2=IMPORT_KEY, 3=UPDATE_KEY_STATE, 4=AUTHENTICATION.
+      enum: [1, 2, 3, 4]
+      x-enum-varnames: [CREATE_ISSUER, IMPORT_KEY, UPDATE_KEY_STATE, AUTHENTICATION]
+    AuditResult:
+      type: integer
+      format: int32
+      description: Numeric audit result enum. 1=SUCCESS, 2=FAILURE.
+      enum: [1, 2]
+      x-enum-varnames: [SUCCESS, FAILURE]
     ErrorResponse:
       type: object
       additionalProperties: false
@@ -576,6 +694,15 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     InternalError:
       description: Internal server error
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServiceUnavailable:
+      description: Persistent storage is unavailable
       headers:
         X-Request-ID:
           $ref: "#/components/headers/RequestId"

@@ -28,6 +28,7 @@ trap cleanup EXIT INT TERM
 
 docker build -t "$IMAGE_NAME" "$ROOT_DIR"
 docker run -d --name "$CONTAINER_NAME" -p 127.0.0.1::8080 \
+  -e KEYPILOT_ADMIN_ID="e2e-operator" \
   -e KEYPILOT_ADMIN_TOKEN="$ADMIN_TOKEN" "$IMAGE_NAME" >/dev/null
 
 HOST_PORT="$(docker port "$CONTAINER_NAME" 8080/tcp | sed 's/.*://')"
@@ -35,7 +36,7 @@ BASE_URL="http://127.0.0.1:$HOST_PORT"
 SDK_JWKS_URL="http://127.0.0.1:8080/v1/issuers/$ISSUER/.well-known/jwks.json"
 
 attempt=0
-until curl -fsS "$BASE_URL/healthz" >/dev/null; do
+until curl -fsS "$BASE_URL/readyz" >/dev/null; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 30 ]; then
     echo "KeyPilot did not become healthy" >&2

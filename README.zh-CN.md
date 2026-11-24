@@ -3,6 +3,7 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/codepunk-gm/keypilot/actions/workflows/ci.yml/badge.svg)](https://github.com/codepunk-gm/keypilot/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/badge/Go-1.24+-00ADD8.svg)](server/go.mod)
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB.svg)](sdk/python/pyproject.toml)
 [![Java](https://img.shields.io/badge/Java-17+-ED8B00.svg)](sdk/java/pom.xml)
@@ -54,7 +55,8 @@ KeyPilot 统一管理**验签公钥**，实际验签仍在业务应用内部本�
 - 数值型密钥生命周期和稳定数值错误码。
 - 标准 JWKS发布，支持 `ETag` 和 `Cache-Control`。
 - Bearer Token保护的管理 API。
-- JSON文件原子持久化和管理操作审计。
+- JSON文件原子持久化和可查询的管理操作审计。
+- 具名管理员身份、被拒绝操作审计和密钥状态变更前后记录。
 - 非 root Docker镜像、健康检查和优雅停机。
 
 ### SDK
@@ -99,6 +101,7 @@ docker build -t keypilot:dev .
 docker run --rm \
   --name keypilot \
   -p 8080:8080 \
+  -e KEYPILOT_ADMIN_ID='security-operator' \
   -e KEYPILOT_ADMIN_TOKEN='replace-with-a-strong-token' \
   -v keypilot-data:/data \
   keypilot:dev
@@ -114,6 +117,18 @@ curl http://127.0.0.1:8080/healthz
 
 ```json
 {"status":"ok"}
+```
+
+包含存储访问检查的就绪探针：
+
+```bash
+curl http://127.0.0.1:8080/readyz
+```
+
+预期响应：
+
+```json
+{"status":"ready"}
 ```
 
 ### 3. 创建签发方
@@ -264,6 +279,17 @@ VerificationResult result = verifier.verify(
 
 平滑轮换期间，KeyPilot允许同时发布多把 ACTIVE或 RETIRED密钥。
 
+## 审计查询
+
+管理变更和认证失败会持久化为审计记录。使用管理 Token查询最新记录：
+
+```bash
+curl 'http://127.0.0.1:8080/admin/v1/audits?issuer=payment-service&limit=100' \
+  -H 'Authorization: Bearer replace-with-a-strong-token'
+```
+
+每条记录包含请求 ID、配置的管理员身份、客户端 IP、操作和结果枚举、关联的 `issuer` 和 `kid`、状态变更、错误码、原因以及 `create_time`。
+
 ## 配置说明
 
 ### 服务端环境变量
@@ -271,6 +297,7 @@ VerificationResult result = verifier.verify(
 | 环境变量 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `KEYPILOT_ADMIN_TOKEN` | 是 | 无 | 管理 API Bearer Token，至少16个字符 |
+| `KEYPILOT_ADMIN_ID` | 否 | `default-admin` | 写入审计记录的稳定管理员身份 |
 | `KEYPILOT_ADDR` | 否 | `:8080` | HTTP监听地址 |
 | `KEYPILOT_DATA_FILE` | 否 | `data/keypilot.json` | JSON原子持久化文件；Docker镜像内设置为 `/data/keypilot.json` |
 | `KEYPILOT_JWKS_MAX_AGE` | 否 | `300` | JWKS公共缓存秒数 |

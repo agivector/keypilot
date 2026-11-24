@@ -25,6 +25,7 @@ import (
 type memoryStore struct {
 	issuers map[string]Issuer
 	keys    map[string]map[string]VerificationKey
+	audits  []AuditRecord
 }
 
 // newMemoryStore creates an initialized test store.
@@ -35,7 +36,7 @@ type memoryStore struct {
 // Returns:
 //   - *memoryStore: initialized test store.
 func newMemoryStore() *memoryStore {
-	return &memoryStore{issuers: make(map[string]Issuer), keys: make(map[string]map[string]VerificationKey)}
+	return &memoryStore{issuers: make(map[string]Issuer), keys: make(map[string]map[string]VerificationKey), audits: make([]AuditRecord, 0)}
 }
 
 // CreateIssuer persists an issuer for service tests.
@@ -57,6 +58,7 @@ func (store *memoryStore) CreateIssuer(ctx context.Context, issuer Issuer, audit
 		return ErrStorageConflict
 	}
 	store.issuers[issuer.Issuer] = issuer
+	store.audits = append(store.audits, audit)
 	return nil
 }
 
@@ -125,6 +127,7 @@ func (store *memoryStore) CreateKey(ctx context.Context, key VerificationKey, au
 		return ErrStorageConflict
 	}
 	store.keys[key.Issuer][key.KeyID] = key
+	store.audits = append(store.audits, audit)
 	return nil
 }
 
@@ -192,7 +195,43 @@ func (store *memoryStore) UpdateKey(ctx context.Context, key VerificationKey, au
 		return ErrStorageNotFound
 	}
 	store.keys[key.Issuer][key.KeyID] = key
+	store.audits = append(store.audits, audit)
 	return nil
+}
+
+// AppendAudit persists a standalone test audit record.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - ctx: request context.
+//   - audit: audit record to persist.
+//
+// Returns:
+//   - error: cancellation error.
+func (store *memoryStore) AppendAudit(ctx context.Context, audit AuditRecord) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	store.audits = append(store.audits, audit)
+	return nil
+}
+
+// ListAudits returns all test audit records.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - ctx: request context.
+//
+// Returns:
+//   - []AuditRecord: copied audit records.
+//   - error: cancellation error.
+func (store *memoryStore) ListAudits(ctx context.Context) ([]AuditRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return append([]AuditRecord(nil), store.audits...), nil
 }
 
 // TestServiceLifecycleAndJWKS verifies valid lifecycle transitions and JWKS visibility.
@@ -209,11 +248,13 @@ func TestServiceLifecycleAndJWKS(testingContext *testing.T) {
 	service := NewService(newMemoryStore(), func() time.Time { return fixedTime })
 	ctx := context.Background()
 
-	if _, err := service.CreateIssuer(ctx, "request-1", "payment-service", "Payment Service", ""); err != nil {
+	auditContext := AuditContext{RequestID: "request-1", Actor: "security-operator", ClientIP: "127.0.0.1"}
+	if _, err := service.CreateIssuer(ctx, auditContext, "payment-service", "Payment Service", ""); err != nil {
 		testingContext.Fatalf("create issuer: %v", err)
 	}
 	jwk := testJWK(testingContext, "payment-2026-01", "PS256")
-	key, err := service.ImportKey(ctx, "request-2", "payment-service", jwk, "rotation key")
+	auditContext.RequestID = "request-2"
+	key, err := service.ImportKey(ctx, auditContext, "payment-service", jwk, "rotation key")
 	if err != nil {
 		testingContext.Fatalf("import key: %v", err)
 	}
@@ -222,7 +263,8 @@ func TestServiceLifecycleAndJWKS(testingContext *testing.T) {
 	}
 
 	for _, targetStatus := range []KeyStatus{KeyStatusActive, KeyStatusRetired} {
-		key, err = service.UpdateKeyStatus(ctx, "request-3", "payment-service", key.KeyID, targetStatus, "")
+		auditContext.RequestID = "request-3"
+		key, err = service.UpdateKeyStatus(ctx, auditContext, "payment-service", key.KeyID, targetStatus, "")
 		if err != nil {
 			testingContext.Fatalf("update status %d: %v", targetStatus, err)
 		}
@@ -232,7 +274,8 @@ func TestServiceLifecycleAndJWKS(testingContext *testing.T) {
 		testingContext.Fatalf("retired key should remain published: keys=%d err=%v", len(jwkSet.Keys), err)
 	}
 
-	if _, err := service.UpdateKeyStatus(ctx, "request-4", "payment-service", key.KeyID, KeyStatusArchived, "retention completed"); err != nil {
+	auditContext.RequestID = "request-4"
+	if _, err := service.UpdateKeyStatus(ctx, auditContext, "payment-service", key.KeyID, KeyStatusArchived, "retention completed"); err != nil {
 		testingContext.Fatalf("archive key: %v", err)
 	}
 	jwkSet, err = service.GetJWKSet(ctx, "payment-service")
@@ -253,16 +296,58 @@ func TestServiceRejectsInvalidTransitions(testingContext *testing.T) {
 	testingContext.Parallel()
 	service := NewService(newMemoryStore(), nil)
 	ctx := context.Background()
-	_, _ = service.CreateIssuer(ctx, "request-1", "payment-service", "Payment Service", "")
-	key, err := service.ImportKey(ctx, "request-2", "payment-service", testJWK(testingContext, "key-1", "RS256"), "")
+	auditContext := AuditContext{RequestID: "request-1", Actor: "security-operator"}
+	_, _ = service.CreateIssuer(ctx, auditContext, "payment-service", "Payment Service", "")
+	auditContext.RequestID = "request-2"
+	key, err := service.ImportKey(ctx, auditContext, "payment-service", testJWK(testingContext, "key-1", "RS256"), "")
 	if err != nil {
 		testingContext.Fatalf("import key: %v", err)
 	}
 
-	_, err = service.UpdateKeyStatus(ctx, "request-3", "payment-service", key.KeyID, KeyStatusRetired, "")
+	auditContext.RequestID = "request-3"
+	_, err = service.UpdateKeyStatus(ctx, auditContext, "payment-service", key.KeyID, KeyStatusRetired, "")
 	assertDomainCode(testingContext, err, APIErrorInvalidKeyTransition)
-	_, err = service.UpdateKeyStatus(ctx, "request-4", "payment-service", key.KeyID, KeyStatusRevoked, "")
+	auditContext.RequestID = "request-4"
+	_, err = service.UpdateKeyStatus(ctx, auditContext, "payment-service", key.KeyID, KeyStatusRevoked, "")
 	assertDomainCode(testingContext, err, APIErrorValidation)
+}
+
+// TestServiceListsSuccessAndFailureAudits verifies actor metadata, status changes, filtering, and failure codes.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - testingContext: Go test context.
+//
+// Returns: None.
+func TestServiceListsSuccessAndFailureAudits(testingContext *testing.T) {
+	testingContext.Parallel()
+	fixedTime := time.Date(2026, 11, 25, 11, 0, 0, 0, time.UTC)
+	service := NewService(newMemoryStore(), func() time.Time { return fixedTime })
+	ctx := context.Background()
+	auditContext := AuditContext{RequestID: "audit-1", Actor: "security-operator", ClientIP: "127.0.0.1", UserAgent: "keypilot-test"}
+	if _, err := service.CreateIssuer(ctx, auditContext, "payment-service", "Payment Service", ""); err != nil {
+		testingContext.Fatalf("create issuer: %v", err)
+	}
+	if err := service.RecordFailure(ctx, AuditContext{RequestID: "audit-2", Actor: "anonymous", ClientIP: "127.0.0.2"}, AuditActionAuthentication, "", "", APIErrorUnauthorized, "administration token is invalid"); err != nil {
+		testingContext.Fatalf("record failure audit: %v", err)
+	}
+	audits, err := service.ListAudits(ctx, "payment-service", 10)
+	if err != nil || len(audits) != 1 {
+		testingContext.Fatalf("list issuer audits: count=%d err=%v", len(audits), err)
+	}
+	if audits[0].Actor != "security-operator" || audits[0].ClientIP != "127.0.0.1" || audits[0].Result != AuditResultSuccess {
+		testingContext.Fatalf("unexpected success audit: %+v", audits[0])
+	}
+	allAudits, err := service.ListAudits(ctx, "", 10)
+	if err != nil || len(allAudits) != 2 || allAudits[1].ErrorCode != APIErrorUnauthorized {
+		testingContext.Fatalf("unexpected audit list: audits=%+v err=%v", allAudits, err)
+	}
+	_, err = service.ListAudits(ctx, "", 0)
+	assertDomainCode(testingContext, err, APIErrorValidation)
+	canceledContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	assertDomainCode(testingContext, service.CheckReady(canceledContext), APIErrorStorageUnavailable)
 }
 
 // testJWK creates a valid 2048-bit RSA public JWK for unit tests.
