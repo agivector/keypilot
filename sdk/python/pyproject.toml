@@ -9,7 +9,23 @@ description = "KeyPilot issuer-scoped JWKS signature verification SDK"
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [{ name = "vectorshi" }]
+license = "MIT"
+keywords = ["jwks", "rsa", "signature", "verification", "key-rotation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security :: Cryptography",
+]
 dependencies = ["cryptography>=42,<47"]
+
+[project.urls]
+Homepage = "https://github.com/codepunk-gm/keypilot"
+Repository = "https://github.com/codepunk-gm/keypilot"
+Issues = "https://github.com/codepunk-gm/keypilot/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,82 +1,350 @@
 # KeyPilot
 
-- 作者：vectorshi
-- 创建时间：2026-11-24
-- 状态：开发中
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-KeyPilot 是一个面向中小企业的开源签名公钥管理与多语言验签 SDK 项目，用于降低多个项目中 RSA 公钥更新、动态刷新、平滑轮换和合规审计的维护成本。
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.24+-00ADD8.svg)](server/go.mod)
+[![Python](https://img.shields.io/badge/Python-3.9+-3776AB.svg)](sdk/python/pyproject.toml)
+[![Java](https://img.shields.io/badge/Java-17+-ED8B00.svg)](sdk/java/pom.xml)
 
-项目优先解决“没有专门安全平台团队，也能快速完成规范化验签接入”的问题。用户可以自行部署，不依赖指定云厂商或商业服务。
+KeyPilot is a lightweight, self-hosted public-key distribution service with consistent verification SDKs for Go, Python, and Java. It helps small and medium-sized teams stop copying RSA public keys into every application and provides a controlled path for key rotation, retirement, revocation, and audit.
 
-## 项目目标
+> **Project status:** Alpha. The core server, RS256/PS256 SDKs, shared test vectors, Docker deployment, and end-to-end verification are implemented. The current file storage backend is designed for a single KeyPilot instance.
 
-- 集中管理公钥的发布、激活、退役和吊销。
-- 通过标准 JWKS 接口分发公钥。
-- 使用 `issuer + kid` 定位验签密钥。
-- 提供 Python、Java、Go 本地验签 SDK。
-- 第一阶段支持 RSA，后续以稳定数值枚举扩展 SM2；SM4 通过独立加解密能力扩展。
-- 保证三个 SDK 的接口语义、错误码和测试结果一致。
-- 支持 Docker 构建和部署服务端。
-- 提供可以直接运行的快速开始和最小接入示例。
-- 保持较少的运行依赖，降低中小企业部署和维护成本。
+## Why KeyPilot?
 
-## 适用对象
+Many teams verify signatures in several applications but still manage public keys manually:
 
-- 同时维护多个 Java、Python 或 Go 项目的中小企业。
-- 仍在各项目配置文件中手工维护 RSA 公钥的团队。
-- 需要密钥轮换、吊销和审计，但暂时没有独立安全平台的团队。
-- 希望自托管，不希望绑定单一云厂商密钥产品的团队。
+- Public keys are copied into configuration files and become difficult to update.
+- Key rotation requires coordinated releases across many services.
+- Different languages implement refresh, caching, and failure handling differently.
+- Revoked or retired keys are difficult to remove consistently.
+- Teams need an auditable solution without adopting a large security platform.
 
-## 快速接入目标
+KeyPilot centralizes **public verification key management** while keeping signature verification local inside each application.
 
-- 准备好 Docker 后，可以通过一个明确命令启动完整开发环境。
-- 现有项目不需要改变业务载荷，只需要接入 SDK 和配置可信签发方。
-- Python、Java、Go 均提供最小可运行示例。
-- 默认配置可以完成本地体验，生产配置具有明确安全提示。
-- 用户不需要理解 KeyPilot 内部架构即可完成基本接入。
+## How It Works
 
-## 设计原则
+```text
+                    management API
+                         │
+                         ▼
+Signer/Admin ─────► KeyPilot Server ─────► JSON file storage
+                         │
+                         │ standard JWKS + ETag
+                         ▼
+                Go / Python / Java SDK
+                         │
+                         ▼
+                  local verification
+```
 
-- 最简单架构：先采用单体服务，不拆分微服务。
-- 灵活组合：通过职责明确的小接口组合存储、缓存和验签能力。
-- 本地验签：SDK 缓存公钥，不让每次验签依赖中心服务。
-- 安全默认：算法白名单、可信地址配置和明确的密钥生命周期。
-- 验证优先：所有新增和修改行为必须经过单元测试。
-- 文档同步：当前有效设计统一维护在 `docs/`。
-- 开源友好：提供清晰文档、兼容性说明、安全报告入口和贡献规范。
+1. An administrator imports an RSA public JWK into KeyPilot.
+2. The key moves through a numeric lifecycle such as `PRE_ACTIVE`, `ACTIVE`, and `RETIRED`.
+3. KeyPilot publishes trusted keys through a standard JWKS endpoint.
+4. Each SDK caches the complete JWKS locally and verifies signatures without a network request per operation.
+5. SDKs refresh with ETag support and remove keys that disappear from the latest valid JWKS response.
 
-## 当前阶段
+## Features
 
-服务端第一阶段基础能力已经实现，包括签发方管理、RSA公钥导入、数值型生命周期、JWKS发布、JSON文件持久化、单元测试和 Docker部署。
+### Server
 
-Python、Java、Go 验签 SDK 已实现统一的 RS256/PS256 验签、ETag刷新、完整缓存替换、未知 `kid` 冷却和 `STRICT`/`AVAILABLE` 失败策略。三种 SDK 共同使用 `test-vectors/`，并已通过真实 Docker服务端端到端验证。
+- Issuer management using `issuer + kid` as the trust boundary.
+- RSA public JWK import with private-key field rejection.
+- Numeric key lifecycle and stable numeric error codes.
+- Standard JWKS publication with `ETag` and `Cache-Control`.
+- Bearer-token protected administration API.
+- Atomic JSON file persistence and administration audit records.
+- Non-root Docker image, health check, and graceful shutdown.
 
-当前 JSON文件存储只支持单实例部署，不应让多个实例同时写入同一个数据文件。
+### SDKs
 
-当前阶段不包含私钥托管、KMS/HSM、中心化远程验签、Web管理后台或分布式基础设施。
+- Go, Python, and Java implementations with matching behavior.
+- RS256 and PS256 local verification.
+- Fixed trusted JWKS URL; request-provided URLs are never trusted.
+- Complete cache replacement instead of permanent key merging.
+- Unknown-`kid` refresh cooldown to limit request amplification.
+- `STRICT=1` and `AVAILABLE=2` stale-cache policies.
+- Stable `6000-6999` SDK error codes.
+- Shared cross-language test vectors.
 
-## 文档
+### Planned Cryptography
 
-- [文档索引](docs/README.md)
-- [方案设计](docs/design.md)
-- [项目目录结构](docs/project-structure.md)
-- [枚举编码规范](docs/enumerations.md)
-- [领域与 API 设计](docs/domain-and-api.md)
-- [SDK 统一契约](docs/sdk-contract.md)
-- [OpenAPI](api/openapi.yaml)
-- [快速开始](docs/quickstart.md)
-- [开发、测试与部署规范](docs/development-standard.md)
-- [归档说明](docs/archive/README.md)
+- SM2 verification will be added through the existing verifier boundary.
+- SM4 is symmetric encryption and will use a separate cipher API instead of being added to signature verification.
 
-## 验证命令
+## Non-Goals
+
+The current release does **not** provide:
+
+- Private-key storage or private-key export.
+- Centralized remote signature verification.
+- KMS, HSM, approval workflow, or Web administration UI.
+- Multi-instance writes to the JSON storage file.
+- Redis, message queues, or microservice deployment requirements.
+
+## Quick Start
+
+### 1. Build the server image
+
+```bash
+git clone https://github.com/codepunk-gm/keypilot.git
+cd keypilot
+docker build -t keypilot:dev .
+```
+
+### 2. Start KeyPilot
+
+Use an administration token with at least 16 characters:
+
+```bash
+docker run --rm \
+  --name keypilot \
+  -p 8080:8080 \
+  -e KEYPILOT_ADMIN_TOKEN='replace-with-a-strong-token' \
+  -v keypilot-data:/data \
+  keypilot:dev
+```
+
+Check health:
+
+```bash
+curl http://127.0.0.1:8080/healthz
+```
+
+Expected response:
+
+```json
+{"status":"ok"}
+```
+
+### 3. Create an issuer
+
+```bash
+curl -X POST http://127.0.0.1:8080/admin/v1/issuers \
+  -H 'Authorization: Bearer replace-with-a-strong-token' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "issuer": "payment-service",
+    "displayName": "Payment Service"
+  }'
+```
+
+### 4. Import and activate an RSA public key
+
+```bash
+curl -X POST http://127.0.0.1:8080/admin/v1/issuers/payment-service/keys \
+  -H 'Authorization: Bearer replace-with-a-strong-token' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "description": "2026 rotation key",
+    "jwk": {
+      "kty": "RSA",
+      "kid": "payment-2026-01",
+      "use": "sig",
+      "alg": "PS256",
+      "n": "replace-with-base64url-modulus",
+      "e": "AQAB"
+    }
+  }'
+
+curl -X PATCH http://127.0.0.1:8080/admin/v1/issuers/payment-service/keys/payment-2026-01/status \
+  -H 'Authorization: Bearer replace-with-a-strong-token' \
+  -H 'Content-Type: application/json' \
+  -d '{"status":2}'
+```
+
+### 5. Read the JWKS
+
+```bash
+curl -i http://127.0.0.1:8080/v1/issuers/payment-service/.well-known/jwks.json
+```
+
+The full API contract is available in [`api/openapi.yaml`](api/openapi.yaml).
+
+## SDK Installation Status
+
+The SDKs are implemented but are **not yet published** to public package registries. Until the first tagged release, use them directly from this repository.
+
+| Language | Source | Local installation |
+| --- | --- | --- |
+| Go | [`sdk/go`](sdk/go) | Use a local `replace` directive or the repository module path after tagging |
+| Python | [`sdk/python`](sdk/python) | `pip install -e ./sdk/python` |
+| Java | [`sdk/java`](sdk/java) | `mvn -f sdk/java/pom.xml install` |
+
+## SDK Usage
+
+All SDKs bind a verifier to one trusted issuer and one fixed JWKS URL. Pass the exact payload bytes used by the signer; KeyPilot does not reorder or serialize business data.
+
+### Go
+
+```go
+import (
+    "context"
+
+    keypilot "github.com/codepunk-gm/keypilot/sdk/go"
+)
+
+verifier, err := keypilot.NewVerifier(keypilot.Config{
+    Issuer:  "payment-service",
+    JWKSURL: "https://keys.example.com/v1/issuers/payment-service/.well-known/jwks.json",
+    AllowedAlgorithms: []keypilot.CryptoAlgorithm{
+        keypilot.CryptoAlgorithmPS256,
+    },
+})
+if err != nil {
+    panic(err)
+}
+
+result, err := verifier.Verify(
+    context.Background(),
+    payloadBytes,
+    signatureBytes,
+    "payment-2026-01",
+    keypilot.CryptoAlgorithmPS256,
+)
+```
+
+### Python
+
+```python
+from keypilot import Config, CryptoAlgorithm, Verifier
+
+verifier = Verifier(Config(
+    issuer="payment-service",
+    jwks_url="https://keys.example.com/v1/issuers/payment-service/.well-known/jwks.json",
+    allowed_algorithms=frozenset({CryptoAlgorithm.PS256}),
+))
+
+result = verifier.verify(
+    payload=payload_bytes,
+    signature=signature_bytes,
+    kid="payment-2026-01",
+    algorithm=CryptoAlgorithm.PS256,
+)
+```
+
+### Java
+
+```java
+import io.github.codepunkgm.keypilot.Config;
+import io.github.codepunkgm.keypilot.CryptoAlgorithm;
+import io.github.codepunkgm.keypilot.VerificationResult;
+import io.github.codepunkgm.keypilot.Verifier;
+import java.util.Set;
+
+Verifier verifier = new Verifier(Config.builder()
+    .issuer("payment-service")
+    .jwksUrl("https://keys.example.com/v1/issuers/payment-service/.well-known/jwks.json")
+    .allowedAlgorithms(Set.of(CryptoAlgorithm.PS256))
+    .build());
+
+VerificationResult result = verifier.verify(
+    payloadBytes,
+    signatureBytes,
+    "payment-2026-01",
+    CryptoAlgorithm.PS256
+);
+```
+
+## Cache Failure Policies
+
+| Code | Mode | Behavior |
+| --- | --- | --- |
+| `1` | `STRICT` | Once `refresh_interval` is reached, refresh synchronously. Reject verification with `CACHE_EXPIRED` if refresh fails. |
+| `2` | `AVAILABLE` | Refresh asynchronously after `refresh_interval` and continue using the last complete valid cache until `max_stale`. |
+
+Both modes reject stale data after `max_stale` unless a refresh succeeds.
+
+## Key Rotation Workflow
+
+1. Import the next public key as `1=PRE_ACTIVE`.
+2. Allow SDK caches to receive the new key.
+3. Change the key to `2=ACTIVE` and start signing with its `kid`.
+4. Change the previous key to `3=RETIRED` while historical signatures still need verification.
+5. Change it to `4=ARCHIVED` after the verification window ends, or `5=REVOKED` immediately for a security incident.
+
+KeyPilot can publish multiple active or retired keys during a safe rotation window.
+
+## Configuration
+
+### Server Environment Variables
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `KEYPILOT_ADMIN_TOKEN` | Yes | None | Administration Bearer token; minimum 16 characters |
+| `KEYPILOT_ADDR` | No | `:8080` | HTTP listen address |
+| `KEYPILOT_DATA_FILE` | No | `data/keypilot.json` | Atomic JSON storage file; the Docker image sets `/data/keypilot.json` |
+| `KEYPILOT_JWKS_MAX_AGE` | No | `300` | Public JWKS cache duration in seconds |
+| `KEYPILOT_SHUTDOWN_TIMEOUT` | No | `10s` | Graceful shutdown timeout |
+
+### SDK Defaults
+
+| Setting | Default |
+| --- | --- |
+| `refresh_interval` | 5 minutes |
+| `request_timeout` | 3 seconds |
+| `unknown_kid_cooldown` | 30 seconds |
+| `max_stale` | 15 minutes |
+| `failure_mode` | `1=STRICT` |
+
+Production JWKS URLs must use HTTPS. Plain HTTP is accepted only for localhost and loopback testing.
+
+## Security Model
+
+- KeyPilot stores and publishes public keys only.
+- RSA private JWK parameters are rejected.
+- SDKs never download keys from a URL supplied by an untrusted request.
+- Algorithms must be explicitly allowed by each verifier.
+- Business timestamp, nonce, audience, replay protection, and authorization checks remain the responsibility of the integrating application.
+- Test vectors and example keys must never be used in production.
+
+See [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
+
+## Development and Verification
+
+Docker is the only required local dependency for the complete verification flow.
 
 ```bash
 make docker-verify
+```
+
+This runs server tests, Go SDK race detection, Python 3.12 tests, and Java tests targeting Java 17.
+
+Run the real end-to-end flow:
+
+```bash
 make e2e
 ```
 
-`make docker-verify` 运行服务端和三语言 SDK 的单元测试；`make e2e` 启动真实 KeyPilot Docker容器并运行三语言最小示例。
+The end-to-end script builds the server image, creates an issuer, imports and activates the shared test keys, and runs all three SDK examples against the live JWKS endpoint.
 
-## 开发约束
+## Project Layout
 
-所有参与者和 Agent 在修改代码前必须阅读并遵循根目录的 `AGENTS.md`。
+```text
+keypilot/
+├── api/             # OpenAPI contract
+├── server/          # Go server
+├── sdk/             # Go, Python, and Java SDKs
+├── examples/        # Runnable language examples
+├── test-vectors/    # Shared cryptographic test cases
+├── scripts/         # End-to-end verification
+├── Dockerfile
+└── Makefile
+```
+
+## Roadmap
+
+- Publish versioned SDK packages for Go, PyPI, and Maven Central.
+- Add a database backend for safe multi-instance deployment.
+- Add SM2 signature verification with shared cross-language vectors.
+- Add an independent SM4 cipher API without mixing encryption into verification.
+- Improve release automation and compatibility testing.
+
+## Contributing
+
+Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before submitting changes and follow the [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+
+## License
+
+KeyPilot is licensed under the [MIT License](LICENSE).

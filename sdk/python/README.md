@@ -1,10 +1,18 @@
-# KeyPilot Python SDK
+# KeyPilot Python SDK / Python SDK说明
 
-- 作者：vectorshi
-- 创建时间：2026-11-25
-- 状态：开发中
+## English
 
-Python SDK 绑定一个可信 `issuer` 和固定 `jwks_url`，在本地缓存 RSA 公钥并支持 RS256、PS256 验签。
+The Python SDK binds one trusted issuer to one fixed JWKS URL, caches the complete valid RSA key set, and verifies RS256 or PS256 signatures locally.
+
+### Current installation
+
+The package is not yet published to PyPI. Install it from the repository:
+
+```bash
+pip install -e ./sdk/python
+```
+
+### Usage
 
 ```python
 from keypilot import Config, CryptoAlgorithm, Verifier
@@ -15,5 +23,26 @@ verifier = Verifier(Config(
     allowed_algorithms=frozenset({CryptoAlgorithm.PS256}),
 ))
 
-result = verifier.verify(payload, signature, "payment-2026-01", CryptoAlgorithm.PS256)
+result = verifier.verify(
+    payload=payload_bytes,
+    signature=signature_bytes,
+    kid="payment-2026-01",
+    algorithm=CryptoAlgorithm.PS256,
+)
 ```
+
+`signature` accepts raw bytes or unpadded Base64URL text.
+
+### Test
+
+```bash
+PYTHONPATH=src python -m unittest discover -s tests -v
+```
+
+## 简体中文
+
+Python SDK绑定一个可信 `issuer` 和固定 `jwks_url`，完整缓存有效 RSA公钥集合，并在本地完成 RS256或 PS256验签。
+
+当前包尚未发布到 PyPI，请从仓库执行 `pip install -e ./sdk/python` 安装。`signature` 支持原始字节或无填充 Base64URL字符串。
+
+SDK支持 ETag、完整缓存替换、未知 `kid` 刷新冷却，以及 `STRICT=1`、`AVAILABLE=2` 失败策略。生产 JWKS地址必须使用 HTTPS。

@@ -5,6 +5,12 @@ info:
   description: >-
     KeyPilot public JWKS and administration API for managing RSA verification
     keys. Private key storage and remote signature verification are out of scope.
+  license:
+    name: MIT
+    identifier: MIT
+  contact:
+    name: KeyPilot
+    url: https://github.com/codepunk-gm/keypilot
 servers:
   - url: http://localhost:8080
     description: Local development

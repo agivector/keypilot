@@ -9,6 +9,27 @@
     <version>0.1.0-SNAPSHOT</version>
     <name>KeyPilot Java SDK</name>
     <description>Issuer-scoped JWKS signature verification SDK</description>
+    <url>https://github.com/codepunk-gm/keypilot</url>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/license/mit</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>vectorshi</name>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/codepunk-gm/keypilot.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/codepunk-gm/keypilot.git</developerConnection>
+        <url>https://github.com/codepunk-gm/keypilot</url>
+    </scm>
 
     <properties>
         <maven.compiler.release>17</maven.compiler.release>

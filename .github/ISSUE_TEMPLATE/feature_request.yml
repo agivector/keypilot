@@ -1,0 +1,34 @@
+name: Feature request / 功能建议
+description: Propose a focused KeyPilot improvement / 提出范围清晰的改进建议
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / 问题
+      description: Describe the real integration or operational problem / 描述真实接入或运维问题
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution / 建议方案
+      description: Prefer the smallest maintainable solution / 优先描述最简单可维护方案
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility impact / 兼容性影响
+      description: API, enum, SDK, storage, or deployment impact / API、枚举、SDK、存储或部署影响
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks / 检查
+      options:
+        - label: I searched existing issues and roadmap items / 我已搜索现有 Issue和路线图
+          required: true
+        - label: This request does not require private-key publication / 该需求不要求发布私钥
+          required: true

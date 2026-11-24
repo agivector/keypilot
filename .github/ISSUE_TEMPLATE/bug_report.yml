@@ -1,0 +1,61 @@
+name: Bug report / Bug反馈
+description: Report a reproducible KeyPilot defect / 报告可复现的 KeyPilot问题
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. Do not include secrets, private keys, tokens, customer data, or vulnerability details.
+
+        感谢反馈问题。请勿提交密钥、私钥、Token、客户数据或漏洞细节。
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit / 版本或提交
+      placeholder: main, v0.1.0, or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component / 模块
+      options:
+        - Server / 服务端
+        - Go SDK
+        - Python SDK
+        - Java SDK
+        - Docker or examples / Docker或示例
+        - Documentation / 文档
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps / 复现步骤
+      description: Provide the smallest reproducible sequence / 提供最小可复现步骤
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior / 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and logs / 实际行为与日志
+      description: Redact all sensitive values / 请删除所有敏感信息
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks / 检查
+      options:
+        - label: I searched existing issues / 我已搜索现有 Issue
+          required: true
+        - label: I removed secrets and private data / 我已移除密钥和隐私数据
+          required: true
