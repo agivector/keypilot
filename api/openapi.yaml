@@ -1,0 +1,579 @@
+openapi: 3.1.0
+info:
+  title: KeyPilot API
+  version: 0.1.0-draft
+  description: >-
+    KeyPilot public JWKS and administration API for managing RSA verification
+    keys. Private key storage and remote signature verification are out of scope.
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: Health
+  - name: JWKS
+  - name: Issuers
+  - name: Keys
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      operationId: getHealth
+      summary: Get service health
+      responses:
+        "200":
+          description: Service is healthy
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /v1/issuers/{issuer}/.well-known/jwks.json:
+    get:
+      tags: [JWKS]
+      operationId: getIssuerJwks
+      summary: Get the public JWK Set for an issuer
+      parameters:
+        - $ref: "#/components/parameters/IssuerPath"
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Public JWK Set
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+            ETag:
+              description: Stable identifier for the current JWK Set content
+              schema:
+                type: string
+            Cache-Control:
+              description: Public cache policy
+              schema:
+                type: string
+                example: public, max-age=300
+          content:
+            application/jwk-set+json:
+              schema:
+                $ref: "#/components/schemas/JwksResponse"
+        "304":
+          description: JWK Set has not changed
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+            ETag:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /admin/v1/issuers:
+    post:
+      tags: [Issuers]
+      operationId: createIssuer
+      summary: Create an issuer
+      security:
+        - AdminBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIssuerRequest"
+      responses:
+        "201":
+          description: Issuer created
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issuer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags: [Issuers]
+      operationId: listIssuers
+      summary: List issuers
+      security:
+        - AdminBearer: []
+      responses:
+        "200":
+          description: Issuer list
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Issuer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /admin/v1/issuers/{issuer}:
+    get:
+      tags: [Issuers]
+      operationId: getIssuer
+      summary: Get an issuer
+      security:
+        - AdminBearer: []
+      parameters:
+        - $ref: "#/components/parameters/IssuerPath"
+      responses:
+        "200":
+          description: Issuer details
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issuer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /admin/v1/issuers/{issuer}/keys:
+    post:
+      tags: [Keys]
+      operationId: importVerificationKey
+      summary: Import an RSA verification key
+      security:
+        - AdminBearer: []
+      parameters:
+        - $ref: "#/components/parameters/IssuerPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportKeyRequest"
+      responses:
+        "201":
+          description: Verification key imported
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationKey"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags: [Keys]
+      operationId: listVerificationKeys
+      summary: List verification keys for an issuer
+      security:
+        - AdminBearer: []
+      parameters:
+        - $ref: "#/components/parameters/IssuerPath"
+      responses:
+        "200":
+          description: Verification key list
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/VerificationKey"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /admin/v1/issuers/{issuer}/keys/{kid}:
+    get:
+      tags: [Keys]
+      operationId: getVerificationKey
+      summary: Get a verification key
+      security:
+        - AdminBearer: []
+      parameters:
+        - $ref: "#/components/parameters/IssuerPath"
+        - $ref: "#/components/parameters/KidPath"
+      responses:
+        "200":
+          description: Verification key details
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationKey"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /admin/v1/issuers/{issuer}/keys/{kid}/status:
+    patch:
+      tags: [Keys]
+      operationId: updateVerificationKeyStatus
+      summary: Update verification key status
+      security:
+        - AdminBearer: []
+      parameters:
+        - $ref: "#/components/parameters/IssuerPath"
+        - $ref: "#/components/parameters/KidPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateKeyStatusRequest"
+      responses:
+        "200":
+          description: Updated verification key
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationKey"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    AdminBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-token
+  headers:
+    RequestId:
+      description: Request correlation identifier
+      schema:
+        type: string
+  parameters:
+    IssuerPath:
+      name: issuer
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+    KidPath:
+      name: kid
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    CreateIssuerRequest:
+      type: object
+      additionalProperties: false
+      required: [issuer, displayName]
+      properties:
+        issuer:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 500
+    Issuer:
+      type: object
+      additionalProperties: false
+      required: [issuer, displayName, create_time, update_time]
+      properties:
+        issuer:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        create_time:
+          type: string
+          format: date-time
+        update_time:
+          type: string
+          format: date-time
+    ImportKeyRequest:
+      type: object
+      additionalProperties: false
+      required: [jwk]
+      properties:
+        description:
+          type: string
+          maxLength: 500
+        jwk:
+          $ref: "#/components/schemas/RsaPublicJwk"
+    UpdateKeyStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/KeyStatus"
+        reason:
+          type: string
+          maxLength: 500
+    VerificationKey:
+      type: object
+      additionalProperties: false
+      required:
+        - issuer
+        - kid
+        - key_type
+        - purpose
+        - algorithm
+        - status
+        - jwk
+        - create_time
+        - update_time
+      properties:
+        issuer:
+          type: string
+        kid:
+          type: string
+        key_type:
+          $ref: "#/components/schemas/KeyType"
+        purpose:
+          $ref: "#/components/schemas/KeyPurpose"
+        algorithm:
+          $ref: "#/components/schemas/CryptoAlgorithm"
+        status:
+          $ref: "#/components/schemas/KeyStatus"
+        description:
+          type: string
+        jwk:
+          $ref: "#/components/schemas/RsaPublicJwk"
+        create_time:
+          type: string
+          format: date-time
+        update_time:
+          type: string
+          format: date-time
+        activate_time:
+          type: [string, "null"]
+          format: date-time
+        retire_time:
+          type: [string, "null"]
+          format: date-time
+        archive_time:
+          type: [string, "null"]
+          format: date-time
+        revoke_time:
+          type: [string, "null"]
+          format: date-time
+        revokedReason:
+          type: [string, "null"]
+    RsaPublicJwk:
+      type: object
+      additionalProperties: false
+      required: [kty, kid, use, alg, n, e]
+      properties:
+        kty:
+          type: string
+          const: RSA
+        kid:
+          type: string
+          minLength: 1
+          maxLength: 128
+        use:
+          type: string
+          const: sig
+        alg:
+          $ref: "#/components/schemas/JwkAlgorithm"
+        n:
+          type: string
+          minLength: 1
+        e:
+          type: string
+          minLength: 1
+    JwksResponse:
+      type: object
+      additionalProperties: false
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/RsaPublicJwk"
+    CryptoAlgorithm:
+      type: integer
+      format: int32
+      description: Numeric crypto algorithm enum. 1001=RS256, 1002=PS256.
+      enum: [1001, 1002]
+      x-enum-varnames: [RS256, PS256]
+    KeyType:
+      type: integer
+      format: int32
+      description: Numeric key type enum. 1=RSA. 2=SM2 and 3=SM4 are reserved.
+      enum: [1, 2, 3]
+      x-enum-varnames: [RSA, SM2, SM4]
+    KeyPurpose:
+      type: integer
+      format: int32
+      description: Numeric key purpose enum. 1=SIGN_VERIFY, 2=ENCRYPT_DECRYPT.
+      enum: [1, 2]
+      x-enum-varnames: [SIGN_VERIFY, ENCRYPT_DECRYPT]
+    JwkAlgorithm:
+      type: string
+      description: Standard JWK alg value mapped to CryptoAlgorithm at the API boundary.
+      enum: [RS256, PS256]
+    KeyStatus:
+      type: integer
+      format: int32
+      description: >-
+        Numeric key status enum. 1=PRE_ACTIVE, 2=ACTIVE, 3=RETIRED,
+        4=ARCHIVED, 5=REVOKED.
+      enum: [1, 2, 3, 4, 5]
+      x-enum-varnames: [PRE_ACTIVE, ACTIVE, RETIRED, ARCHIVED, REVOKED]
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, requestId]
+          properties:
+            code:
+              $ref: "#/components/schemas/ApiErrorCode"
+            message:
+              type: string
+            requestId:
+              type: string
+    ApiErrorCode:
+      type: integer
+      format: int32
+      description: Stable numeric error enum defined by KeyPilot.
+      enum:
+        - 1001
+        - 1002
+        - 1003
+        - 1004
+        - 2001
+        - 3001
+        - 3002
+        - 4001
+        - 4002
+        - 4003
+        - 5001
+        - 5002
+      x-enum-varnames:
+        - VALIDATION_ERROR
+        - INVALID_JWK
+        - PRIVATE_KEY_NOT_ALLOWED
+        - ALGORITHM_NOT_ALLOWED
+        - UNAUTHORIZED
+        - ISSUER_NOT_FOUND
+        - KEY_NOT_FOUND
+        - ISSUER_ALREADY_EXISTS
+        - KEY_ALREADY_EXISTS
+        - INVALID_KEY_TRANSITION
+        - INTERNAL_ERROR
+        - STORAGE_UNAVAILABLE
+  responses:
+    BadRequest:
+      description: Invalid request
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Missing or invalid administration token
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Requested resource was not found
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Resource conflict or invalid state transition
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: Internal server error
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
