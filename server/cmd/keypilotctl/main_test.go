@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	keypilotsqlite "github.com/codepunk-gm/keypilot/server/internal/storage/sqlite"
+	keypilotsqlite "github.com/agivector/keypilot/server/internal/storage/sqlite"
 )
 
 // TestRunBackupAndRestore verifies command parsing and successful SQLite operations.

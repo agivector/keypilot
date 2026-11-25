@@ -18,8 +18,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/codepunk-gm/keypilot/server/internal/keyregistry"
-	"github.com/codepunk-gm/keypilot/server/internal/storage/jsonfile"
+	"github.com/agivector/keypilot/server/internal/keyregistry"
+	"github.com/agivector/keypilot/server/internal/storage/jsonfile"
 )
 
 const testAdminToken = "0123456789abcdef-test-token"

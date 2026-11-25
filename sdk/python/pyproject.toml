@@ -23,9 +23,9 @@ classifiers = [
 dependencies = ["cryptography>=42,<47"]
 
 [project.urls]
-Homepage = "https://github.com/codepunk-gm/keypilot"
-Repository = "https://github.com/codepunk-gm/keypilot"
-Issues = "https://github.com/codepunk-gm/keypilot/issues"
+Homepage = "https://github.com/agivector/keypilot"
+Repository = "https://github.com/agivector/keypilot"
+Issues = "https://github.com/agivector/keypilot/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

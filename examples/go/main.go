@@ -12,7 +12,7 @@ import (
 	"os"
 	"strconv"
 
-	keypilot "github.com/codepunk-gm/keypilot/sdk/go"
+	keypilot "github.com/agivector/keypilot/sdk/go"
 )
 
 const (

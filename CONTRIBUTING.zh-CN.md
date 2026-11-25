@@ -15,7 +15,7 @@
 推荐只安装 Docker，由容器提供项目需要的 Go、Python、Java运行时。
 
 ```bash
-git clone https://github.com/codepunk-gm/keypilot.git
+git clone https://github.com/agivector/keypilot.git
 cd keypilot
 make docker-verify
 ```

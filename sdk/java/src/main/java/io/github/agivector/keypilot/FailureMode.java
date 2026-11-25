@@ -3,7 +3,7 @@
  * Author: vectorshi
  * Created: 2026-11-25
  */
-package io.github.codepunkgm.keypilot;
+package io.github.agivector.keypilot;
 
 /**
  * Description: Controls stale-cache behavior when JWKS refresh fails.

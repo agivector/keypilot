@@ -3,12 +3,12 @@
  * Author: vectorshi
  * Created: 2026-11-25
  */
-package io.github.codepunkgm.keypilot.example;
+package io.github.agivector.keypilot.example;
 
-import io.github.codepunkgm.keypilot.Config;
-import io.github.codepunkgm.keypilot.CryptoAlgorithm;
-import io.github.codepunkgm.keypilot.VerificationResult;
-import io.github.codepunkgm.keypilot.Verifier;
+import io.github.agivector.keypilot.Config;
+import io.github.agivector.keypilot.CryptoAlgorithm;
+import io.github.agivector.keypilot.VerificationResult;
+import io.github.agivector.keypilot.Verifier;
 
 import java.util.Base64;
 import java.util.Set;

@@ -15,11 +15,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/codepunk-gm/keypilot/server/internal/config"
-	"github.com/codepunk-gm/keypilot/server/internal/httpapi"
-	"github.com/codepunk-gm/keypilot/server/internal/keyregistry"
-	"github.com/codepunk-gm/keypilot/server/internal/storage/jsonfile"
-	keypilotsqlite "github.com/codepunk-gm/keypilot/server/internal/storage/sqlite"
+	"github.com/agivector/keypilot/server/internal/config"
+	"github.com/agivector/keypilot/server/internal/httpapi"
+	"github.com/agivector/keypilot/server/internal/keyregistry"
+	"github.com/agivector/keypilot/server/internal/storage/jsonfile"
+	keypilotsqlite "github.com/agivector/keypilot/server/internal/storage/sqlite"
 )
 
 // main runs the KeyPilot process and exits with a non-zero status on startup failure.

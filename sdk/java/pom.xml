@@ -4,12 +4,12 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>io.github.codepunk-gm</groupId>
+    <groupId>io.github.agivector</groupId>
     <artifactId>keypilot-sdk</artifactId>
     <version>0.1.0</version>
     <name>KeyPilot Java SDK</name>
     <description>Issuer-scoped JWKS signature verification SDK</description>
-    <url>https://github.com/codepunk-gm/keypilot</url>
+    <url>https://github.com/agivector/keypilot</url>
 
     <licenses>
         <license>
@@ -24,14 +24,14 @@
             <id>vectorshi</id>
             <name>vectorshi</name>
             <email>xaqiyuan@126.com</email>
-            <url>https://github.com/codepunk-gm</url>
+            <url>https://github.com/agivector</url>
         </developer>
     </developers>
 
     <scm>
-        <connection>scm:git:https://github.com/codepunk-gm/keypilot.git</connection>
-        <developerConnection>scm:git:ssh://git@github.com/codepunk-gm/keypilot.git</developerConnection>
-        <url>https://github.com/codepunk-gm/keypilot</url>
+        <connection>scm:git:https://github.com/agivector/keypilot.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/agivector/keypilot.git</developerConnection>
+        <url>https://github.com/agivector/keypilot</url>
         <tag>HEAD</tag>
     </scm>
 

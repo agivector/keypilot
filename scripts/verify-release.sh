@@ -51,11 +51,11 @@ java_root = ET.parse(root / "sdk/java/pom.xml").getroot()
 group_id = java_root.findtext("m:groupId", namespaces=namespace)
 artifact_id = java_root.findtext("m:artifactId", namespaces=namespace)
 version = java_root.findtext("m:version", namespaces=namespace)
-if (group_id, artifact_id, version) != ("io.github.codepunk-gm", "keypilot-sdk", expected):
+if (group_id, artifact_id, version) != ("io.github.agivector", "keypilot-sdk", expected):
     raise SystemExit("Java coordinates or version do not match VERSION")
 
 go_module = (root / "sdk/go/go.mod").read_text(encoding="utf-8").splitlines()[0].strip()
-if go_module != "module github.com/codepunk-gm/keypilot/sdk/go":
+if go_module != "module github.com/agivector/keypilot/sdk/go":
     raise SystemExit("Go module path is invalid")
 PY
 

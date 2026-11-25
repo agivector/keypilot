@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/codepunk-gm/keypilot/server/internal/keyregistry"
+	"github.com/agivector/keypilot/server/internal/keyregistry"
 )
 
 // TestBackupAndRestorePreserveSnapshot verifies online backup and stopped-service restore semantics.

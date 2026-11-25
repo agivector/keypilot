@@ -1,4 +1,4 @@
-module github.com/codepunk-gm/keypilot/server
+module github.com/agivector/keypilot/server
 
 go 1.24.0
 

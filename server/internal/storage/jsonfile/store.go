@@ -15,7 +15,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/codepunk-gm/keypilot/server/internal/keyregistry"
+	"github.com/agivector/keypilot/server/internal/keyregistry"
 )
 
 // Store persists KeyPilot state in one atomically replaced JSON file.

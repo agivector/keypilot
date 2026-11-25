@@ -10,7 +10,7 @@ info:
     identifier: MIT
   contact:
     name: KeyPilot
-    url: https://github.com/codepunk-gm/keypilot
+    url: https://github.com/agivector/keypilot
 servers:
   - url: http://localhost:8080
     description: Local development

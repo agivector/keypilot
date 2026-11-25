@@ -13,7 +13,7 @@ import (
 	"io"
 	"os"
 
-	keypilotsqlite "github.com/codepunk-gm/keypilot/server/internal/storage/sqlite"
+	keypilotsqlite "github.com/agivector/keypilot/server/internal/storage/sqlite"
 )
 
 // main executes one KeyPilot operator command and returns a non-zero process status on failure.

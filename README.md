@@ -3,7 +3,7 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/codepunk-gm/keypilot/actions/workflows/ci.yml/badge.svg)](https://github.com/codepunk-gm/keypilot/actions/workflows/ci.yml)
+[![CI](https://github.com/agivector/keypilot/actions/workflows/ci.yml/badge.svg)](https://github.com/agivector/keypilot/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/badge/Go-1.24+-00ADD8.svg)](server/go.mod)
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB.svg)](sdk/python/pyproject.toml)
 [![Java](https://img.shields.io/badge/Java-17+-ED8B00.svg)](sdk/java/pom.xml)
@@ -91,7 +91,7 @@ The current release does **not** provide:
 ### 1. Build the server image
 
 ```bash
-git clone https://github.com/codepunk-gm/keypilot.git
+git clone https://github.com/agivector/keypilot.git
 cd keypilot
 docker build -t keypilot:dev .
 ```
@@ -184,7 +184,7 @@ The SDKs are publishable through the Tag-driven release workflow but are **not c
 
 | Language | Source | Local installation |
 | --- | --- | --- |
-| Go | [`sdk/go`](sdk/go) | `go get github.com/codepunk-gm/keypilot/sdk/go@v0.1.0` after the `sdk/go/v0.1.0` tag exists |
+| Go | [`sdk/go`](sdk/go) | `go get github.com/agivector/keypilot/sdk/go@v0.1.0` after the `sdk/go/v0.1.0` tag exists |
 | Python | [`sdk/python`](sdk/python) | `pip install -e ./sdk/python` |
 | Java | [`sdk/java`](sdk/java) | `mvn -f sdk/java/pom.xml install` |
 
@@ -198,7 +198,7 @@ All SDKs bind a verifier to one trusted issuer and one fixed JWKS URL. Pass the 
 import (
     "context"
 
-    keypilot "github.com/codepunk-gm/keypilot/sdk/go"
+    keypilot "github.com/agivector/keypilot/sdk/go"
 )
 
 verifier, err := keypilot.NewVerifier(keypilot.Config{
@@ -243,10 +243,10 @@ result = verifier.verify(
 ### Java
 
 ```java
-import io.github.codepunkgm.keypilot.Config;
-import io.github.codepunkgm.keypilot.CryptoAlgorithm;
-import io.github.codepunkgm.keypilot.VerificationResult;
-import io.github.codepunkgm.keypilot.Verifier;
+import io.github.agivector.keypilot.Config;
+import io.github.agivector.keypilot.CryptoAlgorithm;
+import io.github.agivector.keypilot.VerificationResult;
+import io.github.agivector.keypilot.Verifier;
 import java.util.Set;
 
 Verifier verifier = new Verifier(Config.builder()
@@ -404,7 +404,7 @@ keypilot/
 
 ## Release Pipeline
 
-Pushing a root tag such as `v0.1.0` runs full verification, publishes `keypilot-sdk==0.1.0` to PyPI through Trusted Publishing, publishes `io.github.codepunk-gm:keypilot-sdk:0.1.0` to Maven Central, publishes multi-architecture `ghcr.io/codepunk-gm/keypilot:0.1.0`, creates `sdk/go/v0.1.0`, and creates the GitHub Release. Repository owners must first configure the `pypi` and `maven-central` environments, PyPI Trusted Publisher, Maven Central namespace/token, and GPG secrets documented in the workflow.
+Pushing a root tag such as `v0.1.0` runs full verification, publishes `keypilot-sdk==0.1.0` to PyPI through Trusted Publishing, publishes `io.github.agivector:keypilot-sdk:0.1.0` to Maven Central, publishes multi-architecture `ghcr.io/agivector/keypilot:0.1.0`, creates `sdk/go/v0.1.0`, and creates the GitHub Release. Repository owners must first configure the `pypi` and `maven-central` environments, PyPI Trusted Publisher, Maven Central namespace/token, and GPG secrets documented in the workflow.
 
 ## Roadmap
 

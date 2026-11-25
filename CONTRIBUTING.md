@@ -15,7 +15,7 @@ Thank you for helping improve KeyPilot. The project favors small, reviewable cha
 Docker is the recommended development dependency because it provides the required Go, Python, and Java runtimes.
 
 ```bash
-git clone https://github.com/codepunk-gm/keypilot.git
+git clone https://github.com/agivector/keypilot.git
 cd keypilot
 make docker-verify
 ```

@@ -15,7 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/codepunk-gm/keypilot/server/internal/keyregistry"
+	"github.com/agivector/keypilot/server/internal/keyregistry"
 	_ "modernc.org/sqlite"
 )
 

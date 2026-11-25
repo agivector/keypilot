@@ -3,7 +3,7 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/codepunk-gm/keypilot/actions/workflows/ci.yml/badge.svg)](https://github.com/codepunk-gm/keypilot/actions/workflows/ci.yml)
+[![CI](https://github.com/agivector/keypilot/actions/workflows/ci.yml/badge.svg)](https://github.com/agivector/keypilot/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/badge/Go-1.24+-00ADD8.svg)](server/go.mod)
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB.svg)](sdk/python/pyproject.toml)
 [![Java](https://img.shields.io/badge/Java-17+-ED8B00.svg)](sdk/java/pom.xml)
@@ -89,7 +89,7 @@ KeyPilot 统一管理**验签公钥**，实际验签仍在业务应用内部本�
 ### 1. 构建镜像
 
 ```bash
-git clone https://github.com/codepunk-gm/keypilot.git
+git clone https://github.com/agivector/keypilot.git
 cd keypilot
 docker build -t keypilot:dev .
 ```
@@ -182,7 +182,7 @@ curl -i http://127.0.0.1:8080/v1/issuers/payment-service/.well-known/jwks.json
 
 | 语言 | 源码 | 本地安装方式 |
 | --- | --- | --- |
-| Go | [`sdk/go`](sdk/go) | `sdk/go/v0.1.0` Tag存在后执行 `go get github.com/codepunk-gm/keypilot/sdk/go@v0.1.0` |
+| Go | [`sdk/go`](sdk/go) | `sdk/go/v0.1.0` Tag存在后执行 `go get github.com/agivector/keypilot/sdk/go@v0.1.0` |
 | Python | [`sdk/python`](sdk/python) | `pip install -e ./sdk/python` |
 | Java | [`sdk/java`](sdk/java) | `mvn -f sdk/java/pom.xml install` |
 
@@ -196,7 +196,7 @@ SDK初始化时绑定可信 `issuer` 和固定 JWKS地址。业务方必须传�
 import (
     "context"
 
-    keypilot "github.com/codepunk-gm/keypilot/sdk/go"
+    keypilot "github.com/agivector/keypilot/sdk/go"
 )
 
 verifier, err := keypilot.NewVerifier(keypilot.Config{
@@ -241,10 +241,10 @@ result = verifier.verify(
 ### Java
 
 ```java
-import io.github.codepunkgm.keypilot.Config;
-import io.github.codepunkgm.keypilot.CryptoAlgorithm;
-import io.github.codepunkgm.keypilot.VerificationResult;
-import io.github.codepunkgm.keypilot.Verifier;
+import io.github.agivector.keypilot.Config;
+import io.github.agivector.keypilot.CryptoAlgorithm;
+import io.github.agivector.keypilot.VerificationResult;
+import io.github.agivector.keypilot.Verifier;
 import java.util.Set;
 
 Verifier verifier = new Verifier(Config.builder()
@@ -402,7 +402,7 @@ keypilot/
 
 ## 发布流水线
 
-推送根 Tag（例如 `v0.1.0`）后，流水线会执行完整验证，通过 PyPI Trusted Publishing发布 `keypilot-sdk==0.1.0`，发布 `io.github.codepunk-gm:keypilot-sdk:0.1.0` 到 Maven Central，发布多架构镜像 `ghcr.io/codepunk-gm/keypilot:0.1.0`，创建 `sdk/go/v0.1.0` 和 GitHub Release。仓库所有者需要先配置 `pypi`、`maven-central` environments、PyPI Trusted Publisher、Maven Central命名空间和 Token，以及 GPG密钥 Secrets。
+推送根 Tag（例如 `v0.1.0`）后，流水线会执行完整验证，通过 PyPI Trusted Publishing发布 `keypilot-sdk==0.1.0`，发布 `io.github.agivector:keypilot-sdk:0.1.0` 到 Maven Central，发布多架构镜像 `ghcr.io/agivector/keypilot:0.1.0`，创建 `sdk/go/v0.1.0` 和 GitHub Release。仓库所有者需要先配置 `pypi`、`maven-central` environments、PyPI Trusted Publisher、Maven Central命名空间和 Token，以及 GPG密钥 Secrets。
 
 ## 路线图
 

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/codepunk-gm/keypilot/server/internal/keyregistry"
+	"github.com/agivector/keypilot/server/internal/keyregistry"
 )
 
 // TestStorePersistsAndReloads verifies that issuer, key, and audit data survive store reload.
