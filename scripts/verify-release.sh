@@ -9,7 +9,10 @@ set -eu
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
 EXPECTED_TAG="v$VERSION"
-ACTUAL_TAG="${1:-${GITHUB_REF_NAME:-}}"
+ACTUAL_TAG="${1:-}"
+if [ -z "$ACTUAL_TAG" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+  ACTUAL_TAG="${GITHUB_REF_NAME:-}"
+fi
 
 # fail reports one release metadata mismatch.
 #
