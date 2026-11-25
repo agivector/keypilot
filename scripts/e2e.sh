@@ -11,7 +11,7 @@ CONTAINER_NAME="keypilot-e2e-$$"
 ADMIN_TOKEN="keypilot-e2e-admin-token"
 ISSUER="vector-issuer"
 TEMP_DIR="$(mktemp -d)"
-ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 
 # cleanup removes temporary files and the isolated KeyPilot container.
 #
@@ -72,6 +72,13 @@ for key_file in "$TEMP_DIR"/key-*.json; do
     -H 'Content-Type: application/json' \
     -d '{"status":2}' >/dev/null
 done
+
+docker exec "$CONTAINER_NAME" keypilotctl backup \
+  --data-file /data/keypilot.db \
+  --output /data/keypilot-backup.db >/dev/null
+docker exec "$CONTAINER_NAME" keypilotctl restore \
+  --input /data/keypilot-backup.db \
+  --data-file /data/keypilot-restored.db >/dev/null
 
 docker run --rm --network "container:$CONTAINER_NAME" \
   -e KEYPILOT_EXAMPLE_JWKS_URL="$SDK_JWKS_URL" \

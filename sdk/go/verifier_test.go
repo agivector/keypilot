@@ -317,6 +317,34 @@ func TestFailureModes(testingContext *testing.T) {
 	})
 }
 
+// TestStrictRevocationSLARejectsRemovedCachedKey verifies removal at the 60-second refresh boundary.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - testingContext: Go test context.
+//
+// Returns: None.
+func TestStrictRevocationSLARejectsRemovedCachedKey(testingContext *testing.T) {
+	testingContext.Parallel()
+	jwks := readVectorFile(testingContext, "keys", "rsa-public-jwks.json")
+	state := &mutableJWKSServer{body: jwks, etag: `"revocation-v1"`}
+	server := httptest.NewServer(state)
+	defer server.Close()
+	verifier := newTestVerifier(testingContext, server.URL, FailureModeStrict)
+	clock := &fakeClock{now: time.Date(2026, 11, 25, 0, 0, 0, 0, time.UTC)}
+	verifier.now = clock.current
+	payload, signature := validRS256Input(testingContext)
+	if _, err := verifier.Verify(context.Background(), payload, signature, "vector-rs256-2026-01", CryptoAlgorithmRS256); err != nil {
+		testingContext.Fatalf("initial verify: %v", err)
+	}
+	state.set(extractSingleJWK(testingContext, jwks, "vector-ps256-2026-01"), `"revocation-v2"`, http.StatusOK)
+	clock.advance(time.Minute)
+	if _, err := verifier.Verify(context.Background(), payload, signature, "vector-rs256-2026-01", CryptoAlgorithmRS256); ErrorCode(err) != SDKErrorKeyNotFound {
+		testingContext.Fatalf("expected removed key rejection at refresh boundary, got %v", err)
+	}
+}
+
 // TestConfigurationValidation verifies HTTPS enforcement and numeric enum validation.
 //
 // Author: vectorshi
@@ -340,6 +368,13 @@ func TestConfigurationValidation(testingContext *testing.T) {
 	})
 	if ErrorCode(err) != SDKErrorConfiguration {
 		testingContext.Fatalf("expected invalid algorithm rejection, got %v", err)
+	}
+	normalized, err := normalizeConfig(Config{
+		Issuer: "issuer", JWKSURL: "https://example.com/jwks.json",
+		AllowedAlgorithms: []CryptoAlgorithm{CryptoAlgorithmRS256},
+	})
+	if err != nil || normalized.refreshInterval != time.Minute {
+		testingContext.Fatalf("expected one-minute default refresh interval, config=%+v err=%v", normalized, err)
 	}
 }
 

@@ -187,6 +187,41 @@ final class VerifierTest {
                 .allowedAlgorithms(Set.of(CryptoAlgorithm.RS256))
                 .build());
         assertEquals(SdkErrorCode.CONFIGURATION_ERROR, error.getCode());
+        Config configuration = Config.builder()
+                .issuer("issuer")
+                .jwksUrl("https://example.com/jwks.json")
+                .allowedAlgorithms(Set.of(CryptoAlgorithm.RS256))
+                .build();
+        assertEquals(Duration.ofMinutes(1), configuration.getRefreshInterval());
+    }
+
+    /**
+     * Description: Verifies removal at the 60-second STRICT refresh boundary.
+     * Author: vectorshi
+     * Created: 2026-11-25
+     * Parameters: None.
+     * Returns: None.
+     * Exceptions:
+     *   Exception: Vector file or local server setup failure.
+     */
+    @Test
+    void rejectsRemovedCachedKeyAtStrictRefreshBoundary() throws Exception {
+        byte[] jwks = readVector("keys", "rsa-public-jwks.json");
+        try (TestJwksServer server = new TestJwksServer(jwks, "\"revocation-v1\"")) {
+            Verifier verifier = newVerifier(server, FailureMode.STRICT);
+            MutableClock clock = new MutableClock(Instant.parse("2026-11-25T00:00:00Z"));
+            verifier.setClock(clock);
+            VectorInput input = validRs256Input();
+            verifier.verify(input.payload(), input.signature(), "vector-rs256-2026-01", CryptoAlgorithm.RS256);
+            server.set(singleJwk(jwks, "vector-ps256-2026-01"), "\"revocation-v2\"", 200);
+            clock.advance(Duration.ofMinutes(1));
+            KeyPilotException error = assertThrows(
+                    KeyPilotException.class,
+                    () -> verifier.verify(
+                            input.payload(), input.signature(), "vector-rs256-2026-01", CryptoAlgorithm.RS256)
+            );
+            assertEquals(SdkErrorCode.KEY_NOT_FOUND, error.getCode());
+        }
     }
 
     /**

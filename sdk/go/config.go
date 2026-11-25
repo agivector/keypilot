@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	defaultRefreshInterval    = 5 * time.Minute
+	defaultRefreshInterval    = time.Minute
 	defaultRequestTimeout     = 3 * time.Second
 	defaultUnknownKIDCooldown = 30 * time.Second
 	defaultMaxStale           = 15 * time.Minute

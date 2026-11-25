@@ -24,6 +24,7 @@ var adminIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 // Returns: None.
 type Config struct {
 	Address         string
+	StorageType     StorageType
 	DataFile        string
 	AdminID         string
 	AdminToken      string
@@ -40,12 +41,17 @@ type Config struct {
 //   - Config: validated runtime configuration.
 //   - error: invalid or missing configuration error.
 func Load() (Config, error) {
+	storageType, err := parseStorageType(strings.TrimSpace(os.Getenv("KEYPILOT_STORAGE_TYPE")))
+	if err != nil {
+		return Config{}, err
+	}
 	configuration := Config{
 		Address:         envOrDefault("KEYPILOT_ADDR", ":8080"),
-		DataFile:        envOrDefault("KEYPILOT_DATA_FILE", "data/keypilot.json"),
+		StorageType:     storageType,
+		DataFile:        envOrDefault("KEYPILOT_DATA_FILE", defaultDataFile(storageType)),
 		AdminID:         envOrDefault("KEYPILOT_ADMIN_ID", "default-admin"),
 		AdminToken:      strings.TrimSpace(os.Getenv("KEYPILOT_ADMIN_TOKEN")),
-		JWKSMaxAge:      300,
+		JWKSMaxAge:      30,
 		ShutdownTimeout: 10 * time.Second,
 	}
 	if len(configuration.AdminToken) < 16 {
@@ -71,6 +77,44 @@ func Load() (Config, error) {
 		configuration.ShutdownTimeout = timeout
 	}
 	return configuration, nil
+}
+
+// parseStorageType converts the numeric storage code into a validated enum.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - value: optional numeric storage type text.
+//
+// Returns:
+//   - StorageType: validated storage type, defaulting to SQLITE.
+//   - error: unsupported or malformed storage type error.
+func parseStorageType(value string) (StorageType, error) {
+	if value == "" {
+		return StorageTypeSQLite, nil
+	}
+	code, err := strconv.Atoi(value)
+	storageType := StorageType(code)
+	if err != nil || !storageType.IsValid() {
+		return 0, errors.New("KEYPILOT_STORAGE_TYPE must be 1 for JSON_FILE or 2 for SQLITE")
+	}
+	return storageType, nil
+}
+
+// defaultDataFile returns the default persistence path for a storage type.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - storageType: validated storage implementation enum.
+//
+// Returns:
+//   - string: default persistence file path.
+func defaultDataFile(storageType StorageType) string {
+	if storageType == StorageTypeJSONFile {
+		return "data/keypilot.json"
+	}
+	return "data/keypilot.db"
 }
 
 // envOrDefault returns an environment value or its fallback when empty.

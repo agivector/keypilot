@@ -10,7 +10,7 @@
 
 KeyPilot is a lightweight, self-hosted public-key distribution service with consistent verification SDKs for Go, Python, and Java. It helps small and medium-sized teams stop copying RSA public keys into every application and provides a controlled path for key rotation, retirement, revocation, and audit.
 
-> **Project status:** Alpha. The core server, RS256/PS256 SDKs, shared test vectors, Docker deployment, and end-to-end verification are implemented. The current file storage backend is designed for a single KeyPilot instance.
+> **Project status:** Alpha. The core server, transactional SQLite storage, backup/restore tooling, RS256/PS256 SDKs, shared test vectors, Docker deployment, end-to-end verification, and release workflows are implemented. Production adoption still requires organization-specific security review, TLS ingress, secret management, monitoring, and recovery drills.
 
 ## Why KeyPilot?
 
@@ -30,7 +30,7 @@ KeyPilot centralizes **public verification key management** while keeping signat
                     management API
                          │
                          ▼
-Signer/Admin ─────► KeyPilot Server ─────► JSON file storage
+Signer/Admin ─────► KeyPilot Server ─────► SQLite storage
                          │
                          │ standard JWKS + ETag
                          ▼
@@ -55,7 +55,8 @@ Signer/Admin ─────► KeyPilot Server ─────► JSON file sto
 - Numeric key lifecycle and stable numeric error codes.
 - Standard JWKS publication with `ETag` and `Cache-Control`.
 - Bearer-token protected administration API.
-- Atomic JSON file persistence and queryable administration audit records.
+- Transactional SQLite persistence with atomic business and audit writes.
+- Online consistent backup and stopped-service integrity-checked atomic restore.
 - Named administrator identity, rejected-operation audits, and before/after key status history.
 - Non-root Docker image, health check, and graceful shutdown.
 
@@ -82,7 +83,7 @@ The current release does **not** provide:
 - Private-key storage or private-key export.
 - Centralized remote signature verification.
 - KMS, HSM, approval workflow, or Web administration UI.
-- Multi-instance writes to the JSON storage file.
+- Active-active multi-instance writes to one SQLite database file.
 - Redis, message queues, or microservice deployment requirements.
 
 ## Quick Start
@@ -179,11 +180,11 @@ The full API contract is available in [`api/openapi.yaml`](api/openapi.yaml).
 
 ## SDK Installation Status
 
-The SDKs are implemented but are **not yet published** to public package registries. Until the first tagged release, use them directly from this repository.
+The SDKs are publishable through the Tag-driven release workflow but are **not considered publicly available until the corresponding registry pages exist**. Before the first successful release, use them directly from this repository.
 
 | Language | Source | Local installation |
 | --- | --- | --- |
-| Go | [`sdk/go`](sdk/go) | Use a local `replace` directive or the repository module path after tagging |
+| Go | [`sdk/go`](sdk/go) | `go get github.com/codepunk-gm/keypilot/sdk/go@v0.1.0` after the `sdk/go/v0.1.0` tag exists |
 | Python | [`sdk/python`](sdk/python) | `pip install -e ./sdk/python` |
 | Java | [`sdk/java`](sdk/java) | `mvn -f sdk/java/pom.xml install` |
 
@@ -271,6 +272,10 @@ VerificationResult result = verifier.verify(
 
 Both modes reject stale data after `max_stale` unless a refresh succeeds.
 
+### Revocation Effective SLA
+
+With the default `1=STRICT` policy and a reachable KeyPilot endpoint, an already cached key removed from JWKS is rejected no later than the next 60-second refresh boundary. The server publishes `Cache-Control: max-age=30` by default so compliant intermediaries do not extend that window. `2=AVAILABLE` intentionally prioritizes availability and does not provide the 60-second revocation SLA; its upper bound is `max_stale` when refreshes fail.
+
 ## Key Rotation Workflow
 
 1. Import the next public key as `1=PRE_ACTIVE`.
@@ -301,21 +306,52 @@ Each record includes the request ID, configured administrator identity, client I
 | `KEYPILOT_ADMIN_TOKEN` | Yes | None | Administration Bearer token; minimum 16 characters |
 | `KEYPILOT_ADMIN_ID` | No | `default-admin` | Stable administrator identity written to audit records |
 | `KEYPILOT_ADDR` | No | `:8080` | HTTP listen address |
-| `KEYPILOT_DATA_FILE` | No | `data/keypilot.json` | Atomic JSON storage file; the Docker image sets `/data/keypilot.json` |
-| `KEYPILOT_JWKS_MAX_AGE` | No | `300` | Public JWKS cache duration in seconds |
+| `KEYPILOT_STORAGE_TYPE` | No | `2` | Numeric storage enum: `1=JSON_FILE`, `2=SQLITE` |
+| `KEYPILOT_DATA_FILE` | No | `data/keypilot.db` | Storage path; JSON defaults to `data/keypilot.json`, Docker uses `/data/keypilot.db` |
+| `KEYPILOT_JWKS_MAX_AGE` | No | `30` | Public JWKS cache duration in seconds; keep at or below the required revocation window |
 | `KEYPILOT_SHUTDOWN_TIMEOUT` | No | `10s` | Graceful shutdown timeout |
 
 ### SDK Defaults
 
 | Setting | Default |
 | --- | --- |
-| `refresh_interval` | 5 minutes |
+| `refresh_interval` | 1 minute |
 | `request_timeout` | 3 seconds |
 | `unknown_kid_cooldown` | 30 seconds |
 | `max_stale` | 15 minutes |
 | `failure_mode` | `1=STRICT` |
 
 Production JWKS URLs must use HTTPS. Plain HTTP is accepted only for localhost and loopback testing.
+
+## Backup and Restore
+
+Create a consistent backup while KeyPilot is running:
+
+```bash
+docker run --rm --volumes-from keypilot \
+  --entrypoint keypilotctl keypilot:dev \
+  backup --data-file /data/keypilot.db --output /data/backups/keypilot.db
+```
+
+Restore requires KeyPilot to be stopped so no process holds the target database:
+
+```bash
+docker stop keypilot
+docker run --rm -v keypilot-data:/data \
+  --entrypoint keypilotctl keypilot:dev \
+  restore --input /data/backups/keypilot.db --data-file /data/keypilot.db
+```
+
+The backup command uses SQLite's consistent snapshot mechanism. Restore runs `PRAGMA integrity_check`, copies to a temporary file, synchronizes it, removes stale WAL sidecars, and atomically replaces the target. Keep encrypted off-host backups and test recovery regularly; a backup that has never been restored is not a verified recovery plan.
+
+## Production Checklist
+
+- Terminate TLS in a maintained reverse proxy or load balancer and restrict the administration API by network policy.
+- Inject `KEYPILOT_ADMIN_TOKEN` from a secret manager; rotate it and use a named `KEYPILOT_ADMIN_ID`.
+- Persist `/data` on durable storage, schedule off-host backups, and run restore drills.
+- Monitor `/readyz`, HTTP error rates, storage capacity, SDK refresh failures, and audit events.
+- Use `1=STRICT` for the documented 60-second revocation SLA; choose `2=AVAILABLE` only after accepting its stale-key window.
+- Run one writer instance per SQLite database file. Use external orchestration for restart and failover, not concurrent shared-file writers.
 
 ## Security Model
 
@@ -337,6 +373,12 @@ make docker-verify
 ```
 
 This runs server tests, Go SDK race detection, Python 3.12 tests, and Java tests targeting Java 17.
+
+Validate publishable Python and Java packages:
+
+```bash
+make release-package-check
+```
 
 Run the real end-to-end flow:
 
@@ -360,10 +402,14 @@ keypilot/
 └── Makefile
 ```
 
+## Release Pipeline
+
+Pushing a root tag such as `v0.1.0` runs full verification, publishes `keypilot-sdk==0.1.0` to PyPI through Trusted Publishing, publishes `io.github.codepunk-gm:keypilot-sdk:0.1.0` to Maven Central, publishes multi-architecture `ghcr.io/codepunk-gm/keypilot:0.1.0`, creates `sdk/go/v0.1.0`, and creates the GitHub Release. Repository owners must first configure the `pypi` and `maven-central` environments, PyPI Trusted Publisher, Maven Central namespace/token, and GPG secrets documented in the workflow.
+
 ## Roadmap
 
-- Publish versioned SDK packages for Go, PyPI, and Maven Central.
-- Add a database backend for safe multi-instance deployment.
+- Complete the first externally verified registry release and compatibility matrix.
+- Add a separate external database implementation only when active-active multi-instance operation is required.
 - Add SM2 signature verification with shared cross-language vectors.
 - Add an independent SM4 cipher API without mixing encryption into verification.
 - Improve release automation and compatibility testing.

@@ -10,7 +10,7 @@
 
 KeyPilot 是一个轻量、可自托管的公钥分发服务，并提供行为一致的 Go、Python、Java 本地验签 SDK。它帮助中小企业摆脱“每个项目手工复制 RSA 公钥”的维护方式，统一处理密钥轮换、退役、吊销和审计。
 
-> **项目状态：** Alpha。服务端、RS256/PS256 三语言 SDK、共享测试向量、Docker部署和端到端验证已经实现。当前 JSON文件存储只适合单个 KeyPilot 实例写入。
+> **项目状态：** Alpha。服务端、事务型 SQLite存储、备份恢复工具、RS256/PS256 三语言 SDK、共享测试向量、Docker部署、端到端验证和发布流水线已经实现。正式生产接入仍需企业结合自身环境完成安全评审、TLS入口、密钥管理、监控和恢复演练。
 
 ## 为什么需要 KeyPilot？
 
@@ -30,7 +30,7 @@ KeyPilot 统一管理**验签公钥**，实际验签仍在业务应用内部本�
                     管理 API
                        │
                        ▼
-签名方/管理员 ───► KeyPilot 服务端 ───► JSON文件存储
+签名方/管理员 ───► KeyPilot 服务端 ───► SQLite存储
                        │
                        │ 标准 JWKS + ETag
                        ▼
@@ -55,7 +55,8 @@ KeyPilot 统一管理**验签公钥**，实际验签仍在业务应用内部本�
 - 数值型密钥生命周期和稳定数值错误码。
 - 标准 JWKS发布，支持 `ETag` 和 `Cache-Control`。
 - Bearer Token保护的管理 API。
-- JSON文件原子持久化和可查询的管理操作审计。
+- SQLite事务持久化，业务记录与审计记录原子提交。
+- 支持在线一致性备份，以及停机完整性校验和原子恢复。
 - 具名管理员身份、被拒绝操作审计和密钥状态变更前后记录。
 - 非 root Docker镜像、健康检查和优雅停机。
 
@@ -80,7 +81,7 @@ KeyPilot 统一管理**验签公钥**，实际验签仍在业务应用内部本�
 - 私钥托管或私钥导出。
 - 中心化远程验签服务。
 - KMS、HSM、审批工作流或 Web管理后台。
-- 多实例并发写同一个 JSON文件。
+- 多实例主动-主动并发写同一个 SQLite数据库文件。
 - Redis、消息队列或微服务部署要求。
 
 ## 快速开始
@@ -177,11 +178,11 @@ curl -i http://127.0.0.1:8080/v1/issuers/payment-service/.well-known/jwks.json
 
 ## SDK 发布状态
 
-三种 SDK已经实现，但**尚未发布**到公共包仓库。首个正式 Tag发布前，请直接从本仓库使用。
+三种 SDK已具备 Tag驱动的正式发布流水线，但在对应公共仓库页面真实存在前，**不能视为已经发布**。首个发布成功前，请直接从本仓库使用。
 
 | 语言 | 源码 | 本地安装方式 |
 | --- | --- | --- |
-| Go | [`sdk/go`](sdk/go) | 使用本地 `replace`，发布 Tag后可直接使用模块路径 |
+| Go | [`sdk/go`](sdk/go) | `sdk/go/v0.1.0` Tag存在后执行 `go get github.com/codepunk-gm/keypilot/sdk/go@v0.1.0` |
 | Python | [`sdk/python`](sdk/python) | `pip install -e ./sdk/python` |
 | Java | [`sdk/java`](sdk/java) | `mvn -f sdk/java/pom.xml install` |
 
@@ -269,6 +270,10 @@ VerificationResult result = verifier.verify(
 
 超过 `max_stale` 后，两种模式都必须刷新成功，否则拒绝继续使用旧缓存。
 
+### 吊销生效 SLA
+
+使用默认 `1=STRICT` 策略且 KeyPilot网络可达时，已缓存密钥从 JWKS移除后，最迟在下一个 60秒刷新边界被拒绝。服务端默认发布 `Cache-Control: max-age=30`，避免合规缓存中间层延长该窗口。`2=AVAILABLE` 明确优先可用性，不承诺 60秒吊销 SLA；刷新持续失败时，其旧密钥窗口上限由 `max_stale` 决定。
+
 ## 密钥轮换流程
 
 1. 将下一把公钥导入为 `1=PRE_ACTIVE`。
@@ -299,21 +304,52 @@ curl 'http://127.0.0.1:8080/admin/v1/audits?issuer=payment-service&limit=100' \
 | `KEYPILOT_ADMIN_TOKEN` | 是 | 无 | 管理 API Bearer Token，至少16个字符 |
 | `KEYPILOT_ADMIN_ID` | 否 | `default-admin` | 写入审计记录的稳定管理员身份 |
 | `KEYPILOT_ADDR` | 否 | `:8080` | HTTP监听地址 |
-| `KEYPILOT_DATA_FILE` | 否 | `data/keypilot.json` | JSON原子持久化文件；Docker镜像内设置为 `/data/keypilot.json` |
-| `KEYPILOT_JWKS_MAX_AGE` | 否 | `300` | JWKS公共缓存秒数 |
+| `KEYPILOT_STORAGE_TYPE` | 否 | `2` | 数值存储枚举：`1=JSON_FILE`、`2=SQLITE` |
+| `KEYPILOT_DATA_FILE` | 否 | `data/keypilot.db` | 存储文件；JSON默认 `data/keypilot.json`，Docker使用 `/data/keypilot.db` |
+| `KEYPILOT_JWKS_MAX_AGE` | 否 | `30` | JWKS公共缓存秒数，不应高于要求的吊销窗口 |
 | `KEYPILOT_SHUTDOWN_TIMEOUT` | 否 | `10s` | 优雅停机超时 |
 
 ### SDK默认值
 
 | 配置 | 默认值 |
 | --- | --- |
-| `refresh_interval` | 5分钟 |
+| `refresh_interval` | 1分钟 |
 | `request_timeout` | 3秒 |
 | `unknown_kid_cooldown` | 30秒 |
 | `max_stale` | 15分钟 |
 | `failure_mode` | `1=STRICT` |
 
 生产环境 JWKS地址必须使用 HTTPS。只有 localhost和回环地址测试允许使用 HTTP。
+
+## 备份与恢复
+
+KeyPilot运行期间创建一致性备份：
+
+```bash
+docker run --rm --volumes-from keypilot \
+  --entrypoint keypilotctl keypilot:dev \
+  backup --data-file /data/keypilot.db --output /data/backups/keypilot.db
+```
+
+恢复时必须先停止 KeyPilot，确保没有进程持有目标数据库：
+
+```bash
+docker stop keypilot
+docker run --rm -v keypilot-data:/data \
+  --entrypoint keypilotctl keypilot:dev \
+  restore --input /data/backups/keypilot.db --data-file /data/keypilot.db
+```
+
+备份命令使用 SQLite一致性快照机制。恢复会执行 `PRAGMA integrity_check`，复制到临时文件并 `fsync`，清理旧 WAL旁路文件后原子替换目标数据库。生产环境应保留加密的异地备份并定期恢复演练；从未实际恢复过的备份不能视为有效灾备。
+
+## 生产检查清单
+
+- 使用持续维护的反向代理或负载均衡终止 TLS，并通过网络策略限制管理 API。
+- 从密钥管理系统注入 `KEYPILOT_ADMIN_TOKEN`，定期轮换，并配置具名 `KEYPILOT_ADMIN_ID`。
+- 将 `/data` 放在持久化存储上，定时异地备份并执行恢复演练。
+- 监控 `/readyz`、HTTP错误率、磁盘容量、SDK刷新失败和审计事件。
+- 需要 60秒吊销 SLA时使用 `1=STRICT`；只有接受旧密钥窗口后才选择 `2=AVAILABLE`。
+- 每个 SQLite数据库文件只运行一个写实例，重启和故障转移由外部编排完成，不使用共享文件并发写。
 
 ## 安全边界
 
@@ -335,6 +371,12 @@ make docker-verify
 ```
 
 该命令运行服务端检查、Go SDK竞态检测、Python 3.12测试和 Java 17目标字节码测试。
+
+验证可正式发布的 Python和 Java制品：
+
+```bash
+make release-package-check
+```
 
 执行真实端到端验证：
 
@@ -358,10 +400,14 @@ keypilot/
 └── Makefile
 ```
 
+## 发布流水线
+
+推送根 Tag（例如 `v0.1.0`）后，流水线会执行完整验证，通过 PyPI Trusted Publishing发布 `keypilot-sdk==0.1.0`，发布 `io.github.codepunk-gm:keypilot-sdk:0.1.0` 到 Maven Central，发布多架构镜像 `ghcr.io/codepunk-gm/keypilot:0.1.0`，创建 `sdk/go/v0.1.0` 和 GitHub Release。仓库所有者需要先配置 `pypi`、`maven-central` environments、PyPI Trusted Publisher、Maven Central命名空间和 Token，以及 GPG密钥 Secrets。
+
 ## 路线图
 
-- 发布 Go、PyPI、Maven Central版本化 SDK。
-- 增加数据库存储，支持安全的多实例部署。
+- 完成首次公共仓库真实发布和兼容性矩阵验证。
+- 只有在明确需要主动-主动多实例时，再增加独立外部数据库实现。
 - 增加 SM2验签和跨语言共享测试向量。
 - 增加独立 SM4加解密接口，不将加密能力混入验签。
 - 完善发布自动化和兼容性测试。

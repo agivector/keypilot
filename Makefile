@@ -4,7 +4,7 @@ PYTHON_IMAGE ?= python:3.12-slim
 MAVEN_IMAGE ?= maven:3.9.11-eclipse-temurin-21
 IMAGE ?= keypilot:dev
 
-.PHONY: fmt vet test verify build docker-test docker-go-sdk-test docker-python-sdk-test docker-java-sdk-test docker-sdk-test docker-verify docker-build docker-run e2e
+.PHONY: fmt vet test verify build docker-test docker-go-sdk-test docker-python-sdk-test docker-java-sdk-test docker-sdk-test docker-verify docker-python-package-check docker-java-package-check release-package-check docker-build docker-run e2e
 
 fmt:
 	cd server && gofmt -w $$(find . -name '*.go' -type f)
@@ -24,6 +24,7 @@ verify: fmt vet test
 
 build:
 	cd server && CGO_ENABLED=0 go build -trimpath -o ../bin/keypilot ./cmd/keypilot
+	cd server && CGO_ENABLED=0 go build -trimpath -o ../bin/keypilotctl ./cmd/keypilotctl
 
 docker-test:
 	docker run --rm --user "$$(id -u):$$(id -g)" \
@@ -49,6 +50,21 @@ docker-java-sdk-test:
 docker-sdk-test: docker-go-sdk-test docker-python-sdk-test docker-java-sdk-test
 
 docker-verify: docker-test docker-sdk-test
+
+docker-python-package-check:
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -e PYTHONPYCACHEPREFIX=/tmp/pycache \
+		-v "$(CURDIR):/workspace" -w /workspace/sdk/python \
+		$(PYTHON_IMAGE) sh -c 'python -m pip install --quiet --disable-pip-version-check build twine && rm -rf /tmp/keypilot-python-dist && python -m build --outdir /tmp/keypilot-python-dist && python -m twine check /tmp/keypilot-python-dist/* && python -c '\''import glob, zipfile; wheel = glob.glob("/tmp/keypilot-python-dist/*.whl")[0]; archive = zipfile.ZipFile(wheel); assert any(name.endswith("/licenses/LICENSE") for name in archive.namelist())'\'''
+
+docker-java-package-check:
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp \
+		-v "$(CURDIR):/workspace" -w /workspace/sdk/java \
+		$(MAVEN_IMAGE) sh -c 'mvn -B -P release -Dgpg.skip=true -Dmaven.repo.local=/tmp/m2 verify && test -f target/keypilot-sdk-$$(cat /workspace/VERSION).jar && test -f target/keypilot-sdk-$$(cat /workspace/VERSION)-sources.jar && test -f target/keypilot-sdk-$$(cat /workspace/VERSION)-javadoc.jar && jar tf target/keypilot-sdk-$$(cat /workspace/VERSION).jar | grep -q "^META-INF/LICENSE$$"'
+
+release-package-check:
+	./scripts/verify-release.sh
+	$(MAKE) docker-python-package-check
+	$(MAKE) docker-java-package-check
 
 docker-build:
 	docker build -t $(IMAGE) .

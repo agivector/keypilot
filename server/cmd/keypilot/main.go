@@ -19,6 +19,7 @@ import (
 	"github.com/codepunk-gm/keypilot/server/internal/httpapi"
 	"github.com/codepunk-gm/keypilot/server/internal/keyregistry"
 	"github.com/codepunk-gm/keypilot/server/internal/storage/jsonfile"
+	keypilotsqlite "github.com/codepunk-gm/keypilot/server/internal/storage/sqlite"
 )
 
 // main runs the KeyPilot process and exits with a non-zero status on startup failure.
@@ -49,10 +50,15 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	store, err := jsonfile.New(configuration.DataFile)
+	store, closeStore, err := newStore(configuration)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if closeErr := closeStore(); closeErr != nil {
+			logger.Error("close storage", "error", closeErr)
+		}
+	}()
 	service := keyregistry.NewService(store, nil)
 	server := &http.Server{
 		Addr:              configuration.Address,
@@ -65,7 +71,7 @@ func run(logger *slog.Logger) error {
 
 	serverErrors := make(chan error, 1)
 	go func() {
-		logger.Info("keypilot started", "address", configuration.Address, "data_file", configuration.DataFile)
+		logger.Info("keypilot started", "address", configuration.Address, "storage_type", configuration.StorageType, "data_file", configuration.DataFile)
 		serverErrors <- server.ListenAndServe()
 	}()
 
@@ -86,4 +92,31 @@ func run(logger *slog.Logger) error {
 	shutdownContext, cancel := context.WithTimeout(context.Background(), configuration.ShutdownTimeout)
 	defer cancel()
 	return server.Shutdown(shutdownContext)
+}
+
+// newStore opens the configured persistence implementation.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - configuration: validated server configuration.
+//
+// Returns:
+//   - keyregistry.Store: initialized persistence implementation.
+//   - func() error: storage cleanup function.
+//   - error: unsupported type or storage initialization error.
+func newStore(configuration config.Config) (keyregistry.Store, func() error, error) {
+	switch configuration.StorageType {
+	case config.StorageTypeJSONFile:
+		store, err := jsonfile.New(configuration.DataFile)
+		return store, func() error { return nil }, err
+	case config.StorageTypeSQLite:
+		store, err := keypilotsqlite.New(configuration.DataFile)
+		if err != nil {
+			return nil, func() error { return nil }, err
+		}
+		return store, store.Close, nil
+	default:
+		return nil, func() error { return nil }, errors.New("unsupported storage type")
+	}
 }

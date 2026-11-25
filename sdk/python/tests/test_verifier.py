@@ -248,6 +248,28 @@ class VerifierTest(unittest.TestCase):
                 finally:
                     _stop_server(server, thread)
 
+    def test_strict_revocation_sla_rejects_removed_cached_key(self) -> None:
+        """
+        Description: Verifies removal at the 60-second STRICT refresh boundary.
+        Author: vectorshi
+        Created: 2026-11-25
+        Parameters: None.
+        Returns: None.
+        """
+        jwks = _read_vector("keys", "rsa-public-jwks.json")
+        state, server, thread = _start_server(jwks, '"revocation-v1"')
+        self.addCleanup(_stop_server, server, thread)
+        verifier = _new_verifier(server, FailureMode.STRICT)
+        current_time = [datetime(2026, 11, 25, tzinfo=timezone.utc)]
+        verifier._now = lambda: current_time[0]
+        payload, signature = _valid_rs256_input()
+        verifier.verify(payload, signature, "vector-rs256-2026-01", CryptoAlgorithm.RS256)
+        state.set(_single_jwk(jwks, "vector-ps256-2026-01"), '"revocation-v2"', 200)
+        current_time[0] += timedelta(minutes=1)
+        with self.assertRaises(KeyPilotError) as removed:
+            verifier.verify(payload, signature, "vector-rs256-2026-01", CryptoAlgorithm.RS256)
+        self.assertEqual(SdkErrorCode.KEY_NOT_FOUND, removed.exception.code)
+
     def test_configuration_validation(self) -> None:
         """
         Description: Verifies HTTPS enforcement and numeric enum validation.
@@ -262,6 +284,12 @@ class VerifierTest(unittest.TestCase):
         with self.assertRaises(KeyPilotError) as algorithm:
             Config("issuer", "https://example.com/jwks.json", frozenset({9999}))
         self.assertEqual(SdkErrorCode.CONFIGURATION_ERROR, algorithm.exception.code)
+        configuration = Config(
+            "issuer",
+            "https://example.com/jwks.json",
+            frozenset({CryptoAlgorithm.RS256}),
+        )
+        self.assertEqual(timedelta(minutes=1), configuration.refresh_interval)
 
 
 def _start_server(body: bytes, etag: str) -> Tuple[_ServerState, ThreadingHTTPServer, threading.Thread]:

@@ -2,13 +2,14 @@ FROM golang:1.24-alpine AS builder
 
 WORKDIR /workspace
 
-COPY server/go.mod ./go.mod
+COPY server/go.mod server/go.sum ./
 RUN go mod download
 
 COPY server/ ./
 
 RUN go test ./... \
-    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/keypilot ./cmd/keypilot
+    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/keypilot ./cmd/keypilot \
+    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/keypilotctl ./cmd/keypilotctl
 
 FROM alpine:3.21
 
@@ -18,9 +19,11 @@ RUN addgroup -S keypilot \
     && chown -R keypilot:keypilot /data
 
 COPY --from=builder /out/keypilot /usr/local/bin/keypilot
+COPY --from=builder /out/keypilotctl /usr/local/bin/keypilotctl
 
 ENV KEYPILOT_ADDR=:8080
-ENV KEYPILOT_DATA_FILE=/data/keypilot.json
+ENV KEYPILOT_STORAGE_TYPE=2
+ENV KEYPILOT_DATA_FILE=/data/keypilot.db
 
 USER keypilot:keypilot
 

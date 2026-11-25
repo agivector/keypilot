@@ -44,7 +44,31 @@ func TestLoadAppliesDefaultsAndOverrides(testingContext *testing.T) {
 	if err != nil {
 		testingContext.Fatalf("load configuration: %v", err)
 	}
-	if configuration.Address != ":8080" || configuration.DataFile != "data/keypilot.json" || configuration.AdminID != "security-operator" || configuration.JWKSMaxAge != 600 || configuration.ShutdownTimeout.String() != "5s" {
+	if configuration.Address != ":8080" || configuration.StorageType != StorageTypeSQLite || configuration.DataFile != "data/keypilot.db" || configuration.AdminID != "security-operator" || configuration.JWKSMaxAge != 600 || configuration.ShutdownTimeout.String() != "5s" {
 		testingContext.Fatalf("unexpected configuration: %+v", configuration)
+	}
+}
+
+// TestLoadSupportsNumericStorageTypes verifies numeric storage selection and matching default paths.
+//
+// Author: vectorshi
+// Created: 2026-11-25
+// Parameters:
+//   - testingContext: Go test context.
+//
+// Returns: None.
+func TestLoadSupportsNumericStorageTypes(testingContext *testing.T) {
+	testingContext.Setenv("KEYPILOT_ADMIN_TOKEN", "0123456789abcdef")
+	testingContext.Setenv("KEYPILOT_STORAGE_TYPE", "1")
+	configuration, err := Load()
+	if err != nil {
+		testingContext.Fatalf("load JSON storage configuration: %v", err)
+	}
+	if configuration.StorageType != StorageTypeJSONFile || configuration.DataFile != "data/keypilot.json" || configuration.JWKSMaxAge != 30 {
+		testingContext.Fatalf("unexpected JSON storage configuration: %+v", configuration)
+	}
+	testingContext.Setenv("KEYPILOT_STORAGE_TYPE", "3")
+	if _, err := Load(); err == nil {
+		testingContext.Fatal("expected unsupported storage type to fail")
 	}
 }

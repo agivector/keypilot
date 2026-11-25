@@ -35,7 +35,7 @@ class Config:
     issuer: str
     jwks_url: str
     allowed_algorithms: FrozenSet[CryptoAlgorithm]
-    refresh_interval: timedelta = timedelta(minutes=5)
+    refresh_interval: timedelta = timedelta(minutes=1)
     request_timeout: timedelta = timedelta(seconds=3)
     unknown_kid_cooldown: timedelta = timedelta(seconds=30)
     max_stale: timedelta = timedelta(minutes=15)

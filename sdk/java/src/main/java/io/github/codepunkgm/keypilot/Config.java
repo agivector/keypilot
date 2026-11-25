@@ -278,7 +278,7 @@ public final class Config {
         private String issuer;
         private String jwksUrl;
         private Set<CryptoAlgorithm> allowedAlgorithms;
-        private Duration refreshInterval = Duration.ofMinutes(5);
+        private Duration refreshInterval = Duration.ofMinutes(1);
         private Duration requestTimeout = Duration.ofSeconds(3);
         private Duration unknownKidCooldown = Duration.ofSeconds(30);
         private Duration maxStale = Duration.ofMinutes(15);
