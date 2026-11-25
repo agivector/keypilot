@@ -12,6 +12,9 @@ ADMIN_TOKEN="keypilot-e2e-admin-token"
 ISSUER="vector-issuer"
 TEMP_DIR="$(mktemp -d)"
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
+MAVEN_CACHE_DIR="${MAVEN_CACHE_DIR:-$ROOT_DIR/.cache/maven}"
+
+mkdir -p "$MAVEN_CACHE_DIR"
 
 # cleanup removes temporary files and the isolated KeyPilot container.
 #
@@ -93,13 +96,14 @@ docker run --rm --network "container:$CONTAINER_NAME" \
   python:3.12-slim sh -c 'pip install --quiet --root-user-action=ignore "cryptography>=42,<47" && PYTHONPATH=/workspace/sdk/python/src python verify.py'
 
 docker run --rm --network "container:$CONTAINER_NAME" \
+  -e HOME=/tmp -e MAVEN_CONFIG=/tmp/m2 \
   -e KEYPILOT_EXAMPLE_JWKS_URL="$SDK_JWKS_URL" \
-  -v "$ROOT_DIR:/workspace:ro" \
+  -v "$ROOT_DIR:/workspace:ro" -v "$MAVEN_CACHE_DIR:/tmp/m2" \
   maven:3.9.11-eclipse-temurin-21 sh -c '
     cp -R /workspace/sdk/java /tmp/sdk-java &&
     cp -R /workspace/examples/java /tmp/example-java &&
-    mvn -q -Dmaven.repo.local=/tmp/m2 -f /tmp/sdk-java/pom.xml install -DskipTests &&
-    mvn -q -Dmaven.repo.local=/tmp/m2 -f /tmp/example-java/pom.xml compile exec:java
+    /workspace/scripts/maven-retry.sh -q -Dmaven.repo.local=/tmp/m2 -f /tmp/sdk-java/pom.xml install -DskipTests &&
+    /workspace/scripts/maven-retry.sh -q -Dmaven.repo.local=/tmp/m2 -f /tmp/example-java/pom.xml compile exec:java
   '
 
 echo "KeyPilot Docker end-to-end verification passed for Go, Python, and Java SDKs."

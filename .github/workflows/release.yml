@@ -18,6 +18,13 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+      - name: Restore Maven dependency cache
+        uses: actions/cache@v6
+        with:
+          path: .cache/maven
+          key: ${{ runner.os }}-maven-${{ hashFiles('sdk/java/pom.xml', 'examples/java/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
       - name: Verify release tag and packages
         run: make release-package-check
       - name: Verify server and SDKs
